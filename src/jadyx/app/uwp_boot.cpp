@@ -118,6 +118,7 @@
 #include "jadyx/i18n/localization.h"
 #include "jadyx/game/uwp_software_keyboard.h"
 #include "jadyx/settings/nacp_language.h"
+#include "jadyx/settings/optimization_settings.h"
 #include "jadyx/settings/uwp_system_settings.h"
 #include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 #include "video_core/performance_overlay.h"
@@ -2759,7 +2760,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                                    line.starts_with("shader_cache_mib=") || line.starts_with("shader_eviction=") ||
                                    line.starts_with("redundant_binds=") || line.starts_with("shader_bytecode_policy=") || line.starts_with("software_tlb_entries=") || line.starts_with("astc_mip_drop=") ||
                                    line.starts_with("astc_mip0=")) {
-                            OptimizationSettings checked;
+                            Jadyx::OptimizationSettings checked;
                             if (checked.Apply(line)) config.optimization_overrides.push_back(line);
                             else WriteDiag("boot.cfg: invalid optimization setting ignored: " + line);
                         } else if (line == "readback_uncached=1" || line == "readback_uncached=0") {

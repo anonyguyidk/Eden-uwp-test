@@ -16,7 +16,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check boot optimization parsing
+        run: python3 tools/xbox/tests/boot-optimization-integration.py
+
   build:
+    needs: preflight
     if: github.repository == 'anonyguyidk/Eden-uwp-test' && github.ref == 'refs/heads/coderabbit/uwp-memory-d3d12-optimization/7597b0d6'
     uses: ./.github/workflows/build-uwp.yml
     with:
