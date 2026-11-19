@@ -11,13 +11,9 @@
 #include <vector>
 #include "common/fs/path_util.h"
 #include "common/zstd_compression.h"
+#include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 
 namespace D3D12 {
-inline std::atomic_bool disk_bytecode_enabled{false};
-inline void SetDiskBytecode(bool enabled) {
-    disk_bytecode_enabled.store(enabled, std::memory_order_relaxed);
-}
-
 // A session-scoped, immutable backing file. The signed shader cache remains the rebuild source
 // across launches; these leases only replace live raw DXIL ownership during the current launch.
 class BytecodeStore {

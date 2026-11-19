@@ -119,7 +119,7 @@
 #include "jadyx/game/uwp_software_keyboard.h"
 #include "jadyx/settings/nacp_language.h"
 #include "jadyx/settings/uwp_system_settings.h"
-#include "video_core/renderer_d3d12/d3d12_staging_buffer_pool.h"
+#include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 #include "video_core/performance_overlay.h"
 #include "jadyx/storage/utf8.h"
 
@@ -1501,8 +1501,8 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
 #include <winrt/Windows.UI.ViewManagement.h>
 
 using namespace winrt;
-using namespace Windows::ApplicationModel::Core;
-using namespace Windows::UI::Core;
+using namespace winrt::Windows::ApplicationModel::Core;
+using namespace winrt::Windows::UI::Core;
 
 namespace {
 
@@ -1543,7 +1543,7 @@ unsigned long long ElapsedMs() {
 
 Jadyx::SessionMarker::Paths SessionPaths() {
     const std::filesystem::path dir =
-        std::filesystem::path{std::wstring{Windows::Storage::ApplicationData::Current().LocalFolder().Path()}} /
+        std::filesystem::path{std::wstring{winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path()}} /
         L"jadyx" / L"log";
     return {dir / L"session.marker", dir / L"jadyx_diag.txt"};
 }
@@ -1575,7 +1575,7 @@ std::string LastSessionNotice() {
 std::string LogFilePath(const char* name) {
     constexpr std::uintmax_t MAX_LOG_BYTES = 8ULL << 20;
     const std::filesystem::path dir =
-        std::filesystem::path{std::wstring{Windows::Storage::ApplicationData::Current().LocalFolder().Path()}} /
+        std::filesystem::path{std::wstring{winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path()}} /
         L"jadyx" / L"log";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
@@ -1625,7 +1625,7 @@ std::wstring PrewarmStepKey(u64 program_id) {
 
 std::int32_t LoadPrewarmStep(u64 program_id) {
     try {
-        const auto values = Windows::Storage::ApplicationData::Current().LocalSettings().Values();
+        const auto values = winrt::Windows::Storage::ApplicationData::Current().LocalSettings().Values();
         const winrt::hstring key{PrewarmStepKey(program_id)};
         if (values.HasKey(key)) {
             return winrt::unbox_value<std::int32_t>(values.Lookup(key));
@@ -1636,7 +1636,7 @@ std::int32_t LoadPrewarmStep(u64 program_id) {
 
 void SavePrewarmStep(u64 program_id, std::int32_t step) {
     try {
-        Windows::Storage::ApplicationData::Current().LocalSettings().Values().Insert(
+        winrt::Windows::Storage::ApplicationData::Current().LocalSettings().Values().Insert(
             winrt::hstring{PrewarmStepKey(program_id)}, winrt::box_value(step));
     } catch (...) {
         WriteDiag("WARNING: JIT prewarm budget not saved");
@@ -2473,7 +2473,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
         bool developer_hotkeys = false;
         try {
             const auto install = std::filesystem::path{
-                Windows::ApplicationModel::Package::Current().InstalledLocation().Path().c_str()};
+                winrt::Windows::ApplicationModel::Package::Current().InstalledLocation().Path().c_str()};
             std::ifstream cfg{install / L"boot.cfg"};
             for (std::string line; std::getline(cfg, line);)
                 if (line == "developer_hotkeys=1") developer_hotkeys = true;
@@ -2485,9 +2485,9 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                     WriteDiag(Jadyx::RunKeyboardInputSelfTest() ? "keyboard self-test PASS" : "keyboard self-test FAIL");
                 }
         } catch (...) {}
-        const auto on_key = [&library_active, developer_hotkeys](Windows::System::VirtualKey key, bool pressed) {
+        const auto on_key = [&library_active, developer_hotkeys](winrt::Windows::System::VirtualKey key, bool pressed) {
             if (library_active) return;
-            using Windows::System::VirtualKey;
+            using winrt::Windows::System::VirtualKey;
             if (Jadyx::TextEntryActive()) {
                 // A game's keyboard is up: keys edit its text (characters arrive through
                 // CharacterReceived) and nothing reaches the game.
@@ -2555,7 +2555,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
             surface.core_window = winrt::get_abi(m_window); // an IInspectable, so a valid IUnknown*
             try {
                 const auto bounds = m_window.Bounds();
-                const double scale = Windows::Graphics::Display::DisplayInformation::
+                const double scale = winrt::Windows::Graphics::Display::DisplayInformation::
                                          GetForCurrentView()
                                              .RawPixelsPerViewPixel();
                 surface.width = static_cast<u32>(bounds.Width * scale + 0.5);
@@ -2574,7 +2574,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
             std::string library_pick;
             try {
                 const auto install = std::filesystem::path{
-                    Windows::ApplicationModel::Package::Current().InstalledLocation().Path().c_str()};
+                    winrt::Windows::ApplicationModel::Package::Current().InstalledLocation().Path().c_str()};
                 std::ifstream cfg{install / L"boot.cfg"};
                 for (std::string line; std::getline(cfg, line);) {
                     if (line == "library=1") show_library = true;
@@ -2588,7 +2588,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                     }
                     library_active = true;
                     const auto local = std::filesystem::path{
-                        Windows::Storage::ApplicationData::Current().LocalFolder().Path().c_str()};
+                        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path().c_str()};
                     WriteDiag("library: scanning LocalState/games; waiting for user selection");
                     library_game = Jadyx::ShowGameLibrary(surface.core_window, surface.width,
                         surface.height, local / L"games", [install, local] { SeedUserData(install, local); },
@@ -2623,7 +2623,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                 try {
                     // Bundled NRO from the read-only package install location.
                     const std::string install_path = winrt::to_string(
-                        Windows::ApplicationModel::Package::Current().InstalledLocation().Path());
+                        winrt::Windows::ApplicationModel::Package::Current().InstalledLocation().Path());
                     nro_path = install_path + "\\boot.nro";
                     WriteDiag("resolved NRO path: " + nro_path);
                     // LocalState\boot.cfg adds to the package's, so console A/B tests need no
@@ -2633,7 +2633,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                         cfg << packaged.rdbuf() << '\n';
                     }
                     if (std::ifstream local{std::filesystem::path{
-                            Windows::Storage::ApplicationData::Current().LocalFolder().Path().c_str()} /
+                            winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path().c_str()} /
                                             L"boot.cfg"}) {
                         WriteDiag("boot.cfg: LocalState overrides read");
                         cfg << local.rdbuf();
@@ -3017,7 +3017,7 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                         }
                     }
                     const std::string local_path = winrt::to_string(
-                        Windows::Storage::ApplicationData::Current().LocalFolder().Path());
+                        winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path());
                     SeedUserData(std::filesystem::path{winrt::to_hstring(install_path).c_str()},
                                  std::filesystem::path{winrt::to_hstring(local_path).c_str()});
                     if (library_game) {
@@ -3113,9 +3113,9 @@ private:
     /// PC: publishes the window mode for the in-game menu and applies the one it asked for. The
     /// choice is also kept as the launch mode. The swapchain keeps its size and is stretched.
     static void ApplyWindowMode() {
-        using Windows::UI::ViewManagement::ApplicationView;
-        using Windows::UI::ViewManagement::ApplicationViewWindowingMode;
-        static const bool xbox = Windows::System::Profile::AnalyticsInfo::VersionInfo()
+        using winrt::Windows::UI::ViewManagement::ApplicationView;
+        using winrt::Windows::UI::ViewManagement::ApplicationViewWindowingMode;
+        static const bool xbox = winrt::Windows::System::Profile::AnalyticsInfo::VersionInfo()
                                      .DeviceFamily() == L"Windows.Xbox";
         if (xbox) return;
         try {

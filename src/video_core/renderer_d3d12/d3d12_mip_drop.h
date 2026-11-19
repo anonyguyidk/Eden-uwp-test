@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #include <algorithm>
-#include <atomic>
 #include <bit>
 #include <cstdint>
+#include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 namespace D3D12 {
-inline std::atomic<unsigned> astc_mip_drop{};
-inline void SetAstcMipDrop(unsigned levels) { astc_mip_drop.store(std::min(levels, 2U)); }
 inline unsigned AstcMipDrop(unsigned requested, unsigned width, unsigned height, unsigned levels,
                             unsigned layers, bool eligible) {
     if (!eligible || layers != 1 || width < 1024 || height < 1024 ||

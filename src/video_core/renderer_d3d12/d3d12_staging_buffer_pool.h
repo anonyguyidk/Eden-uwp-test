@@ -13,12 +13,11 @@
 #include "common/memory_ledger.h"
 #include "video_core/renderer_d3d12/d3d12_device.h"
 #include "video_core/renderer_d3d12/d3d12_memory_guard.h"
+#include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 
 namespace D3D12 {
 
 class Scheduler;
-
-void SetUploadRingSize(u32 mib);
 
 enum class MemoryUsage {
     Upload,   ///< CPU writes, GPU reads (UPLOAD heap, always GENERIC_READ)

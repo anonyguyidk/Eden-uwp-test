@@ -12,16 +12,12 @@
 
 #include "video_core/renderer_d3d12/d3d12_command_recorder.h"
 #include "video_core/renderer_d3d12/d3d12_binding_state.h"
+#include "video_core/renderer_d3d12/d3d12_optimization_settings.h"
 #include "video_core/renderer_d3d12/d3d12_descriptor_heap.h"
 #include "video_core/renderer_d3d12/d3d12_command_validation.h"
 #include "video_core/renderer_d3d12/d3d12_device.h"
 
 namespace D3D12 {
-
-inline std::atomic_bool redundant_bind_skipping{false};
-inline void SetRedundantBindSkipping(bool enabled) {
-    redundant_bind_skipping.store(enabled, std::memory_order_relaxed);
-}
 
 using ListRecorder = CommandRecorder<ID3D12GraphicsCommandList*>;
 
