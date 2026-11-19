@@ -2,6 +2,7 @@
 name: Optimization preview
 
 on:
+  workflow_dispatch:
   push:
     branches: [coderabbit/uwp-memory-d3d12-optimization/7597b0d6]
     paths-ignore: ['docs/**', '**/*.md']
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'anonyguyidk/Eden-uwp-test'
+    if: github.repository == 'anonyguyidk/Eden-uwp-test' && github.ref == 'refs/heads/coderabbit/uwp-memory-d3d12-optimization/7597b0d6'
     uses: ./.github/workflows/build-uwp.yml
     with:
       package: true
