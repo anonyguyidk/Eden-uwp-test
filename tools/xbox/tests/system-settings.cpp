@@ -4,16 +4,44 @@
 #include <cstdio>
 #include <cstdlib>
 #include <set>
+#include <source_location>
 #include "jadyx/settings/system_page.h"
 
 int main() {
     using namespace Jadyx;
     using L = Settings::Language;
     using R = Settings::Region;
-    auto check = [](bool ok) { if (!ok) std::abort(); };
+    auto check = [](bool ok, std::source_location location = std::source_location::current()) {
+        if (!ok) { std::fprintf(stderr, "check failed at line %u\n", location.line()); std::abort(); }
+    };
     auto locale = [](std::wstring language, std::wstring region = {}) {
         return SystemLocale{{std::move(language)}, std::move(region)};
     };
+
+    SystemPage tuning;
+    tuning.selected = SystemPage::JitCache;
+    check(HandleSystemInput(tuning, SystemInput::Right) == SystemPageEffect::Changed);
+    check(tuning.settings.optimization.jit_cache_mib == 32);
+    tuning.selected = SystemPage::UploadRing;
+    HandleSystemInput(tuning, SystemInput::Left);
+    check(tuning.settings.optimization.upload_ring_mib == 32);
+    HandleSystemInput(tuning, SystemInput::Left);
+    check(tuning.settings.optimization.upload_ring_mib == 128);
+    tuning.selected = SystemPage::ShaderEviction;
+    HandleSystemInput(tuning, SystemInput::Left);
+    check(tuning.settings.optimization.eviction_aggressiveness == 4);
+    tuning.selected = SystemPage::AstcMipDrop;
+    HandleSystemInput(tuning, SystemInput::Left);
+    check(tuning.settings.optimization.astc_mip_drop == 2);
+    tuning.selected = SystemPage::SoftwareTlb;
+    HandleSystemInput(tuning, SystemInput::Right);
+    check(tuning.settings.optimization.software_tlb_entries == 1);
+    tuning.selected = SystemPage::DiskBytecode;
+    HandleSystemInput(tuning, SystemInput::Confirm);
+    check(!tuning.settings.optimization.disk_bytecode);
+    tuning.selected = SystemPage::RedundantBinds;
+    HandleSystemInput(tuning, SystemInput::Confirm);
+    check(!tuning.settings.optimization.redundant_binds);
 
     // Game language from Windows: the variant follows the region, from the tag or the home region.
     check(GameLanguageForLocale(locale(L"es-CO")) == L::SpanishLatin);
@@ -69,7 +97,7 @@ int main() {
     check(SanitizeUserName(L"  Ana  ") == L"Ana");
     check(SanitizeUserName(L"\tJulián\n") == L"Julián");
     check(SanitizeUserName(L"ABCDEFGHIJKLMN") == L"ABCDEFGHIJ");
-    check(SanitizeUserName(L"ABCDEFGHI😀") == L"ABCDEFGHI");
+    check(SanitizeUserName(L"ABCDEFGHI\xD83D\xDE00") == L"ABCDEFGHI");
     check(SanitizeUserName(L"   ").empty());
 
     // The page: values, changes and the name editor.
@@ -111,8 +139,14 @@ int main() {
     check(HandleSystemInput(page, SystemInput::Right) == SystemPageEffect::Changed &&
           page.settings.track_play_time);
     check(HandleSystemInput(page, SystemInput::Down) == SystemPageEffect::None &&
-          page.selected == SystemPage::ClearCache);
+          page.selected == SystemPage::ShaderShare);
+    for (const auto row : {SystemPage::JitCache, SystemPage::UploadRing, SystemPage::ShaderCache,
+                           SystemPage::ShaderEviction, SystemPage::AstcMipDrop, SystemPage::SoftwareTlb, SystemPage::DiskBytecode, SystemPage::RedundantBinds, SystemPage::ClearCache}) {
+        check(HandleSystemInput(page, SystemInput::Down) == SystemPageEffect::None && page.selected == row);
+    }
     check(HandleSystemInput(page, SystemInput::Confirm) == SystemPageEffect::ClearCache);
+    check(HandleSystemInput(page, SystemInput::Down) == SystemPageEffect::None &&
+          page.selected == SystemPage::Updates);
     check(HandleSystemInput(page, SystemInput::Down) == SystemPageEffect::None &&
           page.selected == SystemPage::UserName);
     check(HandleSystemInput(page, SystemInput::Left) == SystemPageEffect::None && !page.name_editor);

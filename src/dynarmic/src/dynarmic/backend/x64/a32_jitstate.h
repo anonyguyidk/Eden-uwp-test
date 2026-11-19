@@ -92,6 +92,8 @@ struct A32JitState {
             rsb_codeptrs = src.rsb_codeptrs;
         }
     }
+    // Two 32-byte direct-mapped translation slots: tag, offset, epoch, reserved.
+    std::array<u64, 8> software_tlb{};
 };
 
 #ifdef _MSC_VER

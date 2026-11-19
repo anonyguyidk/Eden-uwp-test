@@ -4,6 +4,7 @@
 #include "video_core/renderer_d3d12/d3d12_texture_cache_internal.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 #include <boost/container/small_vector.hpp>
 
@@ -44,6 +45,9 @@ bool CoversSubresources(const Image& dst, const Image& src, const ImageCopy& cop
 } // namespace
 
 void TextureCacheRuntime::CopyImage(Image& dst, Image& src, std::span<const ImageCopy> copies) {
+    if (dst.DroppedMips() || src.DroppedMips()) {
+        throw std::runtime_error("ASTC mip-drop alias/copy requires astc_mip_drop=0");
+    }
     if (std::ranges::any_of(copies, [](const ImageCopy& copy) { return copy.extent_in_blocks; })) {
         // Normalize only alias copies. Guessing units from alignment would corrupt ordinary
         // partial texel copies and silently under-copy aligned alias extents.
@@ -739,6 +743,9 @@ bool TextureCacheRuntime::BlitImage(Framebuffer*, ImageView& dst, ImageView& src
     Image* const src_image = src.SourceImage();
     if (!dst_image || !src_image || !dst_image->Handle() || !src_image->Handle()) {
         return false;
+    }
+    if (dst_image->DroppedMips() || src_image->DroppedMips()) {
+        throw std::runtime_error("ASTC mip-drop blit requires astc_mip_drop=0");
     }
     if (dst_image == src_image) {
         BlitWithinImage(dst, src, dst_region, src_region, filter);

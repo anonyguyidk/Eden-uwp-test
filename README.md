@@ -3,7 +3,121 @@ SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 SPDX-License-Identifier: GPL-3.0-or-later
 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e29d51e8e31d4cc732ba095501d70773fcc925cfdbfaae38c5c2b867034b1188 -->
+
+<h1 align="center">Eden UWP · Experimental memory build</h1>
+
+> **VIBECODED WITH AI ASSISTANCE — EXPERIMENTAL BUILD**
+> This fork's optimization changes and documentation are solely vibecoded with AI assistance.
+> Treat this entire repository/fork as experimental. The inherited emulator was written by
+> PrismFox67, Jadyx, Eden, yuzu and their contributors; this notice does not claim AI authorship
+> of their work. No Xbox performance improvement or TotK stability is certified by this patch.
+
+<p align="center">
+  <img alt="Experimental" src="https://img.shields.io/badge/status-experimental-orange">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Xbox_UWP-107c10">
+  <img alt="Graphics API" src="https://img.shields.io/badge/renderer-Direct3D_12-blue">
+  <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue">
+</p>
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8c841ca0be90a42d76afd49d428f022ba1ce4b20709fd90b6ac022728e7cd49c -->
+
+## Optimization build quick start
+
+<p align="center">
+  <a href="https://github.com/anonyguyidk/Eden-uwp-test/releases"><img alt="Download experimental builds" src="https://img.shields.io/badge/Download-Experimental_releases-107c10?style=for-the-badge"></a>
+  <a href="https://github.com/anonyguyidk/Eden-uwp-test/actions/workflows/optimization-preview.yml"><img alt="Optimization build status" src="https://github.com/anonyguyidk/Eden-uwp-test/actions/workflows/optimization-preview.yml/badge.svg"></a>
+</p>
+
+The optimization preview workflow publishes a clearly marked **prerelease** after a successful Windows build. Download its installation ZIP and follow the [installation notes and known limitations](docs/xbox/optimization-release.md). A release is available only when the build and packaging jobs pass.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+Baseline: [PrismFox67/Eden-UWP at d06a11e88613](https://github.com/PrismFox67/Eden-UWP/tree/d06a11e886133a5970766f7b5f8c854de11548e5).
+The optimization branch adds a separate CMake output directory; packaging retains the inherited
+app identity, so installing it updates that app. Keep backups of settings and saves for testing.
+
+From a Windows command prompt with Visual Studio's UWP C++ workload, Windows SDK, native Perl,
+NASM and glslangValidator installed ([complete prerequisites](docs/xbox/uwp_build.md)):
+
+```bat
+tools\xbox\build-env.bat cmake --preset uwp-memory
+tools\xbox\build-env.bat cmake --build --preset uwp-memory --target eden-uwp
+powershell -File tools\xbox\package-appx.ps1 -BuildDir build-uwp-memory -OutDir build-uwp-memory\package -Library
+```
+
+The packaging tool also requires the Mesa translator DLL and runtime shader dependencies;
+follow [deployment instructions](docs/xbox/xbox_deploy.md). Linux cannot build this UWP target.
+
+### Adjustable settings
+
+Open **Settings → System** and use left/right or confirm on the optimization choices. They apply
+at the next game launch. Controls use discrete choices and support controller/keyboard input.
+The new row labels are currently English in every interface language.
+
+| Setting / config key | Default | Choices | Effect |
+| --- | --- | --- | --- |
+| JIT cache / `jit_cache_mib` | 48 MiB per JIT | 32–48 in config; 32 or 48 in UI | Smaller code cache; full-cache clearing and recompilation when exhausted |
+| Upload ring / `upload_ring_mib` | 64 MiB | 32, 64, 128 | Ceiling of the existing persistently mapped, fence-managed staging ring |
+| Linked shader cache / `shader_cache_mib` | 4 MiB | 0–16 | SPIR-V-key/DXIL memoization budget; live pipelines retain their bytecode separately |
+| PSO eviction / `shader_eviction` | 1 | 1–4 | Divides non-emergency finite idle lifetimes; the memory guard remains authoritative |
+| Skip redundant bindings / `redundant_binds` | On | 0, 1 | Root signatures, vertex buffers and render targets; custom commands and resets invalidate tracking |
+
+Configuration precedence: built-in defaults → saved UI settings → packaged boot.cfg →
+LocalState boot.cfg → `LocalState/optimization/<16-digit-lowercase-title-id>.cfg`.
+An override file only needs changed values. Blank lines and lines starting with `#` are ignored;
+use exact `key=value` syntax. Invalid assignments preserve the inherited value and are logged.
+Homebrew with no title ID uses `0000000000000000.cfg`.
+
+```ini
+# Example per-game profile; create the optimization directory if absent.
+jit_cache_mib=32
+upload_ring_mib=64
+shader_cache_mib=0
+shader_eviction=2
+redundant_binds=1
+```
+
+**Capacity estimate:** 128 → 48 MiB across four JITs reduces configured code capacity by
+320 MiB; 128 → 64 MiB saves another 64 MiB of ring capacity. The 384 MiB sum is not a
+measured reduction in process commit: JIT demand commitment, metadata, 32-bit/helper JITs,
+staging fallbacks and driver allocations affect actual usage. Smaller caches can increase stutter.
+The OS-reported app limit still governs the existing memory guard; these settings cannot guarantee
+that a heavy title stays below 5,120 MiB.
+
+### Patch status and remaining work
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:4e08589b002e09d2c26e29492ed0299ebb8802a864771b324a4f0467c83b0cd9 -->
+
+| Workstream | Status in this branch |
+| --- | --- |
+| JIT, ring, binding tracking, UI/per-game settings | Implemented experimental foundation |
+| Disk-backed DXIL release | Implemented; Windows PSO integration pending |
+| Physical ASTC mip omission | Constrained prototype; default off; alias/copy/blit/readback restrictions |
+| Emitted software TLB | Implemented; default off; full Dynarmic/UWP integration pending |
+
+[Implementation details, new controls and compatibility limits](docs/xbox/optimization-implementation.md).
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+See the [patch series and exact file map](docs/xbox/optimization-build-plan.md) for the remaining
+implementation steps, correctness gates and measurement protocol. The historical README below
+contains upstream results, not results obtained with this optimization build.
+
+---
+
+## Inherited project documentation
+
 <h1 align="center">Eden UWP (unofficial)</h1>
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <p align="center">
   A Nintendo Switch emulator for <b>Xbox Series X|S in Developer Mode</b>, built on

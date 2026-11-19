@@ -119,6 +119,7 @@
 #include "jadyx/game/uwp_software_keyboard.h"
 #include "jadyx/settings/nacp_language.h"
 #include "jadyx/settings/uwp_system_settings.h"
+#include "video_core/renderer_d3d12/d3d12_staging_buffer_pool.h"
 #include "video_core/performance_overlay.h"
 #include "jadyx/storage/utf8.h"
 
@@ -260,10 +261,8 @@ struct BootConfig {
     u32 run_seconds{};
     /// PC test budget; hard process-commit enforcement belongs to local-run.ps1.
     u32 memory_limit_mib{};
-    /// Per-core JIT code cache ("jit_cache_mib="). Full, it is cleared with all the blocks'
-    /// metadata, so it bounds the JIT's memory: a large game compiled 400+ MiB in two minutes on
-    /// the default 512 MiB per core, and 1 GiB with the metadata, without ever releasing any.
-    u32 jit_cache_mib{128};
+    /// Validated boot.cfg overrides, applied after the saved UI profile at each launch.
+    std::vector<std::string> optimization_overrides;
     /// Read/write/execute JIT code memory instead of W^X page flips ("jit_rwx=1"); falls back to
     /// W^X when the system refuses it.
     bool jit_rwx{};
@@ -424,6 +423,8 @@ constexpr u32 DEFAULT_GAME_RUN_SECONDS = 120;
 // Returns a process exit-style status. 0 == boot reached the run phase cleanly.
 int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
                     const BootConfig& config) {
+    auto optimization = LoadSystemSettings().optimization;
+    for (const auto& line : config.optimization_overrides) optimization.Apply(line);
     if (!config.log_filter.empty()) {
         Settings::values.log_filter = config.log_filter;
     }
@@ -485,7 +486,7 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
                                                                : "hybrid diagnostic") +
               (fastmem_enabled ? " (hot " + std::to_string(config.fastmem_hot_mib) + " MiB)" : "") +
               ", D3D12 pipeline workers on, dependent draws preserved" +
-              ", JIT cache " + std::to_string(config.jit_cache_mib) + " MiB per core" +
+              ", JIT cache " + std::to_string(optimization.jit_cache_mib) + " MiB per core" +
               (config.jit_rwx ? ", JIT RWX requested" : ""));
     D3D12::SetTracedFrame(config.traced_frame, config.traced_frames);
     D3D12::SetMaterialProbe(config.material_probe_x, config.material_probe_y);
@@ -497,7 +498,7 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
     // The GPU spends the same 5 GiB as the emulated DRAM and the JIT: the texture and buffer
     // caches evict against what the whole app has left, not DXGI's budget.
     g_test_memory_limit = u64{config.memory_limit_mib} << 20;
-    Core::SetJitCodeCacheSize(config.jit_cache_mib << 20);
+    Core::SetJitCodeCacheSize(optimization.jit_cache_mib << 20);
     Dynarmic::SetPreferRwxCodeMemory(config.jit_rwx);
     D3D12::SetAppMemoryQuery(QueryAppMemory);
     D3D12::SetBcArrayDecode(!config.bc_arrays_native);
@@ -672,6 +673,23 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
     if (content.error != Content::Error::None) {
         WriteDiag("content: launch blocked error=" + std::to_string(static_cast<int>(content.error)));
         shutdown(); return 16;
+    }
+    {
+        const auto local = std::filesystem::path{std::wstring{winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path()}};
+        std::ifstream profile{local / "optimization" / (fmt::format("{:016x}", content.application) + ".cfg")};
+        for (std::string line; std::getline(profile, line);) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (!line.empty() && line.front() != '#' && !optimization.Apply(line))
+                WriteDiag("optimization profile: invalid setting ignored: " + line);
+        }
+        Core::SetJitCodeCacheSize(optimization.jit_cache_mib << 20);
+        D3D12::SetUploadRingSize(optimization.upload_ring_mib);
+        D3D12::SetAstcMipDrop(optimization.astc_mip_drop);
+        Core::SetSoftwareTlbEntries(optimization.software_tlb_entries);
+        D3D12::SetDiskBytecode(optimization.disk_bytecode);
+        D3D12::SetPipelineTuning(optimization.shader_cache_mib, optimization.eviction_aggressiveness);
+        D3D12::SetRedundantBindSkipping(optimization.redundant_binds);
+        WriteDiag("optimization profile: " + optimization.Serialize());
     }
     if (content.managed)
         system.GetContentProviderUnion().SetApplicationContentOverride(content.application, &manual_provider);
@@ -2737,16 +2755,13 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                             } else {
                                 config.pulse_seed = parsed;
                             }
-                        } else if (line.starts_with("jit_cache_mib=")) {
-                            const std::string_view value = std::string_view{line}.substr(14);
-                            u32 parsed{};
-                            const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
-                            if (result.ec == std::errc{} && result.ptr == value.data() + value.size() &&
-                                parsed >= 32 && parsed <= 512) {
-                                config.jit_cache_mib = parsed;
-                            } else {
-                                WriteDiag("boot.cfg: invalid jit_cache_mib (32-512), ignored");
-                            }
+                        } else if (line.starts_with("jit_cache_mib=") || line.starts_with("upload_ring_mib=") ||
+                                   line.starts_with("shader_cache_mib=") || line.starts_with("shader_eviction=") ||
+                                   line.starts_with("redundant_binds=") || line.starts_with("shader_bytecode_policy=") || line.starts_with("software_tlb_entries=") || line.starts_with("astc_mip_drop=") ||
+                                   line.starts_with("astc_mip0=")) {
+                            OptimizationSettings checked;
+                            if (checked.Apply(line)) config.optimization_overrides.push_back(line);
+                            else WriteDiag("boot.cfg: invalid optimization setting ignored: " + line);
                         } else if (line == "readback_uncached=1" || line == "readback_uncached=0") {
                             config.readback_uncached = line.back() == '1';
                         } else if (line == "jit_rwx=1" || line == "jit_rwx=0") {

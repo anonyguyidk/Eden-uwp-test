@@ -78,6 +78,8 @@ bool HasShaderHash(const std::array<std::atomic<u64>, 4>& slots, u64 unique_hash
     return false;
 }
 std::atomic_bool pipeline_eviction{true};
+std::atomic<u32> linked_shader_budget_mib{4};
+std::atomic<u32> eviction_multiplier{1};
 std::atomic_bool pipeline_prewarm{true};
 
 /// Writes a translated stage's IR and SPIR-V next to the log (SetDumpedShader).
@@ -386,6 +388,11 @@ void SetGeometryDroppedShader(u64 unique_hash) {
     AddShaderHash(gs_dropped_shaders, unique_hash);
 }
 
+void SetPipelineTuning(u32 shader_cache_mib, u32 eviction_aggressiveness) {
+    linked_shader_budget_mib.store((std::min)(shader_cache_mib, 16U), std::memory_order_relaxed);
+    eviction_multiplier.store(std::clamp(eviction_aggressiveness, 1U, 4U), std::memory_order_relaxed);
+}
+
 void SetPipelineEviction(bool enabled) {
     pipeline_eviction.store(enabled, std::memory_order_relaxed);
 }
@@ -514,7 +521,13 @@ PipelineCache::~PipelineCache() {
 void PipelineCache::TickResidency(const CacheMemorySnapshot& snapshot, Scheduler& scheduler) {
     using Policy = PipelineResidencyPolicy;
     ++residency_frame;
-    const u64 idle_frames = Policy::IdleFrames(snapshot.app_used, snapshot.app_limit);
+    const u64 base_idle_frames = Policy::IdleFrames(snapshot.app_used, snapshot.app_limit);
+    const u64 idle_frames = base_idle_frames == Policy::KEEP_IDLE_FRAMES ||
+                                   base_idle_frames == Policy::EMERGENCY_IDLE_FRAMES
+                               ? base_idle_frames
+                               : base_idle_frames / eviction_multiplier.load(std::memory_order_relaxed);
+    linked_shaders.SetBudget(disk_bytecode_enabled.load(std::memory_order_relaxed) ? 0 :
+        size_t{linked_shader_budget_mib.load(std::memory_order_relaxed)} << 20);
     const bool evict = pipeline_eviction.load(std::memory_order_relaxed) ||
                        idle_frames == Policy::EMERGENCY_IDLE_FRAMES;
     const size_t checks = evict ? (std::min)(Policy::SWEEP_PER_FRAME, residency_sweep.size()) : 0;
@@ -1110,6 +1123,8 @@ std::unique_ptr<GraphicsPipeline> PipelineCache::CreateGraphicsPipeline(
     // SPIR-V to DXIL goes with the PSO build, on a worker: done here it stalled the GPU thread for
     // 150-490 ms per 300 frames when entering new areas (0.2.59 profile). Translating the guest
     // shaders stays here, since it reads guest memory through the environments.
+    linked_shaders.SetBudget(disk_bytecode_enabled.load(std::memory_order_relaxed) ? 0 :
+        size_t{linked_shader_budget_mib.load(std::memory_order_relaxed)} << 20);
     auto compile_dxil = [this, spirv = std::move(spirv), stage_indices, dumps_dxil,
                          vertex_shader = key.unique_hashes[1],
                          fragment_shader = key.unique_hashes[5],

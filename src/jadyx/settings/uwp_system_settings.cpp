@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "jadyx/settings/uwp_system_settings.h"
 
+#include <sstream>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.System.UserProfile.h>
@@ -48,6 +49,10 @@ SystemSettings LoadSystemSettings() {
             settings.ui_language = winrt::unbox_value<winrt::hstring>(values.Lookup(UiLanguageKey)).c_str();
             if (!I18n::FindUiLanguage(settings.ui_language)) settings.ui_language.clear();
         }
+        if (values.HasKey(L"optimization_profile_v1")) {
+            std::istringstream profile{winrt::to_string(winrt::unbox_value<winrt::hstring>(values.Lookup(L"optimization_profile_v1")))};
+            for (std::string line; std::getline(profile, line);) settings.optimization.Apply(line);
+        }
         settings.game_language = LoadChoice(values, GameLanguageKey, SelectableGameLanguages());
         settings.region = LoadChoice(values, RegionKey, SelectableRegions());
         if (values.HasKey(UserNameKey))
@@ -69,6 +74,7 @@ SystemSettings LoadSystemSettings() {
 bool SaveSystemSettings(const SystemSettings& settings) {
     try {
         const auto values = winrt::Windows::Storage::ApplicationData::Current().LocalSettings().Values();
+        values.Insert(L"optimization_profile_v1", winrt::box_value(winrt::to_hstring(settings.optimization.Serialize())));
         values.Insert(UiLanguageKey, winrt::box_value(winrt::hstring{settings.ui_language}));
         values.Insert(GameLanguageKey, winrt::box_value(ChoiceValue(settings.game_language)));
         values.Insert(RegionKey, winrt::box_value(ChoiceValue(settings.region)));

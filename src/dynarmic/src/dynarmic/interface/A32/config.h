@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -116,6 +117,8 @@ struct UserCallbacks : public TranslateCallbacks {
 };
 
 struct UserConfig {
+    unsigned software_tlb_entries = 0;
+    const std::atomic<std::uint64_t>* page_table_epoch = nullptr;
     bool HasOptimization(OptimizationFlag f) const {
         if (!unsafe_optimizations) {
             f &= all_safe_optimizations;

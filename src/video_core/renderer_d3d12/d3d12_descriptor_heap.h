@@ -40,12 +40,17 @@ public:
 
     /// Counts the CBV/SRV/UAV slots ever freed: a new view may take a freed handle, so a table
     /// copied from handles before a free may no longer hold what they describe.
+    [[nodiscard]] static u64 AttachmentAllocations() noexcept {
+        return attachment_allocations.load(std::memory_order_relaxed);
+    }
+
     [[nodiscard]] static u64 ViewFrees() noexcept {
         return view_frees.load(std::memory_order_relaxed);
     }
 
 private:
     static inline std::atomic<u64> view_frees{};
+    static inline std::atomic<u64> attachment_allocations{};
 
     struct PendingFree {
         u64 record_point;

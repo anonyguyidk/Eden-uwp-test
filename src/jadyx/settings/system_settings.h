@@ -18,6 +18,7 @@
 #include "common/settings_enums.h"
 #include "jadyx/i18n/localization.h"
 #include "jadyx/settings/upscaling.h"
+#include "jadyx/settings/optimization_settings.h"
 
 namespace Jadyx {
 
@@ -27,6 +28,7 @@ inline constexpr std::size_t MaxShaderShareUrlLength = 120;
 inline constexpr std::wstring_view DefaultUserName = L"Jadyx";
 
 struct SystemSettings {
+    OptimizationSettings optimization;
     std::wstring ui_language;                         ///< BCP 47 tag; empty follows the system.
     std::optional<Settings::Language> game_language;  ///< nullopt follows the system.
     std::optional<Settings::Region> region;           ///< nullopt follows the system.

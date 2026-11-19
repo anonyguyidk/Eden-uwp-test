@@ -213,6 +213,8 @@ void ArmDynarmic64::MakeJit(Common::PageTable* page_table, std::size_t address_s
 
     // Memory
     if (page_table) {
+        config.software_tlb_entries = g_software_tlb_entries.load(std::memory_order_relaxed);
+        config.page_table_epoch = &Common::jit_mapping_epoch;
         // Dynarmic will not write to the page table, const_cast is safe here
         config.page_table = reinterpret_cast<void**>(
             const_cast<Common::PageTable::JitPageEntry*>(page_table->jit_entries.data()));

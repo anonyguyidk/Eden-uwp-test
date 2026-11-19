@@ -46,4 +46,12 @@ std::vector<u8> DecompressDataZSTD(std::span<const u8> compressed) {
     return decompressed;
 }
 
+std::vector<u8> DecompressDataZSTDBounded(std::span<const u8> compressed, std::size_t maximum_size) {
+    const auto size = ZSTD_getFrameContentSize(compressed.data(), compressed.size());
+    if (size == ZSTD_CONTENTSIZE_ERROR || size == ZSTD_CONTENTSIZE_UNKNOWN || size > maximum_size) {
+        return {};
+    }
+    return DecompressDataZSTD(compressed);
+}
+
 } // namespace Common::Compression

@@ -9,9 +9,12 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 #include <d3d12.h>
+#include "common/zstd_compression.h"
+#include "common/memory_ledger.h"
 
 namespace D3D12 {
 
@@ -55,12 +58,31 @@ struct GraphicsPsoKeyHash {
 };
 
 inline GraphicsPsoKey MakeGraphicsPsoKey(const D3D12_GRAPHICS_PIPELINE_STATE_DESC& desc,
-                                        std::shared_ptr<const void> bytecode_owner) {
+                                        std::shared_ptr<const void> bytecode_owner, bool compress_identity = false) {
     GraphicsPsoKey key{.bytecode_owner = std::move(bytecode_owner), .root = desc.pRootSignature};
     const std::array bytecodes{desc.VS, desc.HS, desc.DS, desc.GS, desc.PS};
     for (size_t i = 0; i < bytecodes.size(); ++i) {
         key.shaders[i] = {static_cast<const std::uint8_t*>(bytecodes[i].pShaderBytecode),
                           bytecodes[i].BytecodeLength};
+    }
+    if (compress_identity) {
+        struct CompressedIdentity {
+            std::array<std::vector<std::uint8_t>, 5> stages;
+            Common::MemoryCharge charge;
+        };
+        auto packed = std::make_shared<CompressedIdentity>();
+        u64 retained = 0;
+        for (size_t i = 0; i < key.shaders.size(); ++i) {
+            const auto input = key.shaders[i];
+            if (!input.empty()) {
+                packed->stages[i] = Common::Compression::CompressDataZSTDDefault(input.data(), input.size());
+                if (packed->stages[i].empty()) throw std::runtime_error("DXIL identity compression failed");
+            }
+        }
+        for (const auto& stage : packed->stages) retained += stage.capacity();
+        packed->charge = Common::MemoryCharge(Common::MemoryAccount::ShaderBytecode, retained);
+        key.bytecode_owner = packed;
+        for (size_t i = 0; i < key.shaders.size(); ++i) key.shaders[i] = packed->stages[i];
     }
     auto& words = key.state;
     words.reserve(256 + desc.InputLayout.NumElements * 16);

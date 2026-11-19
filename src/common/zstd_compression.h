@@ -42,4 +42,7 @@ namespace Common::Compression {
  */
 [[nodiscard]] std::vector<u8> DecompressDataZSTD(std::span<const u8> compressed);
 
+[[nodiscard]] std::vector<u8> DecompressDataZSTDBounded(std::span<const u8> compressed,
+                                                      std::size_t maximum_size);
+
 } // namespace Common::Compression

@@ -26,6 +26,12 @@
         "DYNARMIC_ENABLE_NO_EXECUTE_SUPPORT": "ON",
         "DYNARMIC_UWP_APPCONTAINER": "ON"
       }
+    },
+    {
+      "name": "uwp-memory",
+      "displayName": "Xbox UWP experimental memory optimization",
+      "inherits": "uwp-x64",
+      "binaryDir": "${sourceDir}/build-uwp-memory"
     }
   ],
   "buildPresets": [
@@ -33,6 +39,10 @@
       "name": "uwp-x64",
       "configurePreset": "uwp-x64",
       "description": "Build the Eden core stack for UWP. Add --target <core|dynarmic|common|video_core> to scope."
+    },
+    {
+      "name": "uwp-memory",
+      "configurePreset": "uwp-memory"
     }
   ]
 }

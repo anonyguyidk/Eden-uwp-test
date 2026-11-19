@@ -14,6 +14,10 @@
 
 namespace Common {
 
+// Mapping mutations already follow the memory manager's synchronization/reclamation protocol.
+// This generation only invalidates translations; it does not replace that protocol.
+inline std::atomic<u64> jit_mapping_epoch{1};
+
 enum class PageType : u8 {
     /// Page is unmapped and should cause an access error.
     Unmapped = 0b00,
@@ -134,6 +138,7 @@ struct PageTable {
 
         void Store(uintptr_t value) noexcept {
             pointer.store(value, std::memory_order_release);
+            jit_mapping_epoch.fetch_add(1, std::memory_order_release);
         }
 
     private:

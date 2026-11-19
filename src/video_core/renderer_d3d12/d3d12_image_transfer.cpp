@@ -7,6 +7,7 @@
 #include <array>
 #include <atomic>
 #include <cstring>
+#include <stdexcept>
 #include <utility>
 
 #include "common/alignment.h"
@@ -51,6 +52,7 @@ Image::CopyLayout Image::Layout(const BufferImageCopy& copy) const {
 u64 Image::TransferBytes(std::span<const BufferImageCopy> copies) const {
     u64 bytes = 0;
     for (const auto& copy : copies) {
+        if (copy.image_subresource.base_level < static_cast<s32>(dropped_mips)) continue;
         const CopyLayout layout = Layout(copy);
         bytes += layout.tight_slice * layout.depth *
                  static_cast<u64>(std::max(1, copy.image_subresource.num_layers));
@@ -87,6 +89,7 @@ void Image::LogConvertedUpload(const u8* data, const CopyLayout& layout,
 }
 
 bool Image::AreCopyCompatible(const Image& a, const Image& b) noexcept {
+    if (a.DroppedMips() || b.DroppedMips()) return false;
     if (!a.format.converted && !b.format.converted) {
         return true;
     }
@@ -158,6 +161,7 @@ void Image::UploadMemoryImpl(ID3D12Resource* buffer, size_t base_offset, u8* map
     Transition(D3D12_RESOURCE_STATE_COPY_DEST);
     bool promoted_source = false;
     for (const auto& copy : copies) {
+        if (copy.image_subresource.base_level < static_cast<s32>(dropped_mips)) continue;
         const CopyLayout layout = Layout(copy);
         const u32 layers = static_cast<u32>(std::max(1, copy.image_subresource.num_layers));
         if (format.converted && mapped_at_base) {
@@ -338,6 +342,7 @@ void Image::DownloadMemory(std::span<ID3D12Resource*> buffers, std::span<size_t>
     if (!CanTransfer() || copies.empty()) {
         return;
     }
+    if (dropped_mips) throw std::runtime_error("ASTC mip-drop readback requires astc_mip_drop=0");
     VideoCore::Perf::Add(VideoCore::Perf::Counter::TextureDownloads, 1);
     VideoCore::Perf::Add(VideoCore::Perf::Counter::TextureDownloadBytes, TransferBytes(copies));
     if (IsDepthStencilPlanar()) {

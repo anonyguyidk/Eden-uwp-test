@@ -562,6 +562,7 @@ struct Memory::Impl {
             // Remove the JIT pointer first so a concurrent access falls back instead of observing
             // a stale host pointer while the metadata entry is being cleared.
             page_table.jit_entries.ZeroRegion(base, end);
+            Common::jit_mapping_epoch.fetch_add(1, std::memory_order_release);
             page_table.entries.ZeroRegion(base, end);
         } else {
             auto current_block = block_count.fetch_add(1, std::memory_order_relaxed);

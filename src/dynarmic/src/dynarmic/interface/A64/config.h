@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -132,6 +133,8 @@ struct UserCallbacks {
 };
 
 struct UserConfig {
+    unsigned software_tlb_entries = 0;
+    const std::atomic<std::uint64_t>* page_table_epoch = nullptr;
     /// Fastmem Pointer
     /// This should point to the beginning of a 2^page_table_address_space_bits bytes
     /// address space which is in arranged just like what you wish for emulated memory to

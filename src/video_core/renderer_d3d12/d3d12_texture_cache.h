@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <eden_spirv_to_dxil.h>
+#include "video_core/renderer_d3d12/d3d12_mip_drop.h"
 
 #include "shader_recompiler/shader_info.h"
 #include "video_core/renderer_d3d12/d3d12_cache_policy.h"
@@ -323,6 +324,7 @@ public:
     }
     /// Copies both planes from src, which has the same resource format.
     void CopyDepthStencilFrom(Image& src, std::span<const VideoCommon::ImageCopy> copies);
+    [[nodiscard]] u32 DroppedMips() const noexcept { return dropped_mips; }
     [[nodiscard]] u32 Subresource(s32 level, s32 layer, u32 plane = 0) const noexcept;
     /// Records the barriers into next, or adds them to batch (flushed first when the transition
     /// must record other commands).
@@ -430,6 +432,7 @@ private:
     std::shared_ptr<TextureResourceAllocator::Allocation> resource_allocation;
     FormatInfo format{};
     bool gpu_decoded{};
+    u32 dropped_mips{};
     DXGI_FORMAT footprint_format{}; ///< format GetCopyableFootprints uses for plane 0
     D3D12_RESOURCE_STATES state{D3D12_RESOURCE_STATE_COMMON};
     /// A placed render target or depth stencil whose heap memory another resource may have used:

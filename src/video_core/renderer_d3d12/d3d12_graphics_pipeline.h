@@ -18,6 +18,7 @@
 #include <boost/container/small_vector.hpp>
 
 #include "common/memory_ledger.h"
+#include "video_core/renderer_d3d12/d3d12_bytecode_store.h"
 #include "common/thread_worker.h"
 #include "shader_recompiler/ir_opt/demote_return_pass.h"
 #include "shader_recompiler/shader_info.h"
@@ -259,9 +260,10 @@ public:
     [[nodiscard]] u32 LocalMemoryScratchWords() const noexcept {
         return local_memory_scratch_words;
     }
-    [[nodiscard]] std::span<const u8> DiagnosticDxil(size_t stage) const noexcept {
-        return dxil && stage < dxil->size() ? std::span<const u8>{(*dxil)[stage]}
-                                          : std::span<const u8>{};
+    [[nodiscard]] std::span<const u8> DiagnosticDxil(size_t stage) const {
+        if (!dxil && !diagnostic_dxil && bytecode_file) diagnostic_dxil = ReadBytecode();
+        const auto& source = dxil ? dxil : diagnostic_dxil;
+        return source && stage < source->size() ? std::span<const u8>{(*source)[stage]} : std::span<const u8>{};
     }
 
     [[nodiscard]] const StageBindings& StageInfo(size_t stage) const noexcept {
@@ -331,7 +333,8 @@ private:
     /// flatten_on_fault: on a driver fault, leave the failure to the caller (flatten_retry) instead
     /// of reporting it, since it can retranslate the shaders.
     void Build(bool flatten_on_fault = false);
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC Describe(std::vector<D3D12_INPUT_ELEMENT_DESC>& elements) const;
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC Describe(std::vector<D3D12_INPUT_ELEMENT_DESC>& elements,
+                                               const SharedDxilStages& bytecode) const;
 
     void Publish(State next);
 
@@ -354,6 +357,11 @@ private:
     const PipelineLayout& layout;
     const u32 lower_noperspective_mask;
     FragmentHelpers fragment_helpers{};
+    SharedDxilStages ReadBytecode() const;
+    void SpillBytecode(bool allow_dormant = false);
+    std::shared_ptr<BytecodeStore> bytecode_file;
+    mutable SharedDxilStages diagnostic_dxil;
+    bool disk_bytecode = disk_bytecode_enabled.load(std::memory_order_relaxed);
     SharedDxilStages dxil; ///< Immutable linked bytecode shared across fixed-state PSOs.
     std::array<bool, NUM_STAGES> has_stage{};
     std::array<std::shared_ptr<const StageBindings>, NUM_STAGES> stage_infos;

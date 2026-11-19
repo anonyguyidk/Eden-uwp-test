@@ -11,10 +11,17 @@
 #include <fmt/format.h>
 
 #include "video_core/renderer_d3d12/d3d12_command_recorder.h"
+#include "video_core/renderer_d3d12/d3d12_binding_state.h"
+#include "video_core/renderer_d3d12/d3d12_descriptor_heap.h"
 #include "video_core/renderer_d3d12/d3d12_command_validation.h"
 #include "video_core/renderer_d3d12/d3d12_device.h"
 
 namespace D3D12 {
+
+inline std::atomic_bool redundant_bind_skipping{false};
+inline void SetRedundantBindSkipping(bool enabled) {
+    redundant_bind_skipping.store(enabled, std::memory_order_relaxed);
+}
 
 using ListRecorder = CommandRecorder<ID3D12GraphicsCommandList*>;
 
@@ -29,11 +36,13 @@ class CommandStream {
 public:
     using List = ID3D12GraphicsCommandList;
 
-    explicit CommandStream(ListRecorder& recorder_) : recorder{recorder_} {}
+    explicit CommandStream(ListRecorder& recorder_) : recorder{recorder_},
+        skip_binds{redundant_bind_skipping.load(std::memory_order_relaxed)} {}
 
     /// Any other use of the list, as func(list), in recording order.
     template <typename Func>
     void Record(Func&& func) {
+        bindings.Invalidate();
         recorder.Record(std::forward<Func>(func));
     }
 
@@ -137,6 +146,7 @@ public:
     // --- Root arguments ----------------------------------------------------------------------
 
     void SetGraphicsRootSignature(ID3D12RootSignature* signature) {
+        if (skip_binds && bindings.Root(reinterpret_cast<std::uintptr_t>(signature))) return;
         Probed("SetGraphicsRootSignature",
                [signature](List* list) { list->SetGraphicsRootSignature(signature); },
                [signature] { return fmt::format("signature={}", static_cast<void*>(signature)); });
@@ -219,6 +229,13 @@ public:
                });
     }
     void IASetVertexBuffers(UINT start, UINT count, const D3D12_VERTEX_BUFFER_VIEW* views) {
+        if (skip_binds && count <= 32) {
+            std::array<BindingState::Vertex, 32> values{};
+            for (UINT i = 0; views && i < count; ++i) {
+                values[i] = {views[i].BufferLocation, views[i].SizeInBytes, views[i].StrideInBytes};
+            }
+            if (bindings.Vertices(start, std::span{values}.first(count))) return;
+        }
         if (GpuDiagnosticsEnabled() && views) {
             for (UINT i = 0; i < count; ++i) {
                 TraceGpuDetail(fmt::format("vertex buffer slot={} VA={:x} bytes={} stride={}",
@@ -277,6 +294,12 @@ public:
             depth ? std::optional{*depth} : std::nullopt;
         // A single range is one handle to the first of count consecutive descriptors.
         const UINT handles = targets == nullptr ? 0 : (single_range ? 1 : count);
+        if (skip_binds && handles <= 8) {
+            std::array<std::uintptr_t, 8> values{};
+            for (UINT i = 0; i < handles; ++i) values[i] = targets[i].ptr;
+            if (bindings.Targets(count, single_range != FALSE, std::span{values}.first(handles),
+                                 depth ? depth->ptr : 0, CpuDescriptorAllocator::AttachmentAllocations())) return;
+        }
         Array("OMSetRenderTargets", targets, handles,
               [=](List* list, const D3D12_CPU_DESCRIPTOR_HANDLE* copy) {
                   list->OMSetRenderTargets(count, handles == 0 ? nullptr : copy, single_range,
@@ -363,6 +386,7 @@ public:
     void ExecuteIndirect(ID3D12CommandSignature* signature, UINT max_commands,
                          ID3D12Resource* arguments, UINT64 arguments_offset,
                          ID3D12Resource* count, UINT64 count_offset) {
+        bindings.Invalidate();
         if (!ValidExecuteIndirect(signature, arguments, arguments_offset, count, count_offset)) {
             return;
         }
@@ -639,6 +663,8 @@ private:
     }
 
     ListRecorder& recorder;
+    BindingState bindings;
+    bool skip_binds;
 };
 
 } // namespace D3D12

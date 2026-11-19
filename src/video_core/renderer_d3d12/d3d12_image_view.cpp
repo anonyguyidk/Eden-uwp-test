@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <stdexcept>
 #include <utility>
 
 #include <fmt/format.h>
@@ -27,6 +28,9 @@ ImageView::ImageView(TextureCacheRuntime& runtime_, const VideoCommon::ImageView
       image{source.Handle()} {
     if (!image) {
         return;
+    }
+    if (source.DroppedMips() && info.format != source.info.format) {
+        throw std::runtime_error("ASTC mip-drop format alias requires astc_mip_drop=0");
     }
     VideoCore::Perf::LapTimer view_timer;
     // Views of a decoded block-compressed array read its plain texels (a view in another format
@@ -69,9 +73,15 @@ ImageView::ImageView(TextureCacheRuntime& runtime_, const VideoCommon::ImageView
                                    : resource_desc.DepthOrArraySize;
     // A view past the end of its resource is undefined in D3D12: the PC's driver tolerates it,
     // AMD's may build a descriptor that addresses the wrong memory. Clamp it (and say so).
-    const u32 base_level = std::min(static_cast<u32>(info.range.base.level), resource_levels - 1);
+    const u32 guest_base = static_cast<u32>(info.range.base.level);
+    const u32 drop = source.DroppedMips();
+    const u32 translated_base = guest_base > drop ? guest_base - drop : 0;
+    const u32 omitted_in_view = guest_base < drop ? drop - guest_base : 0;
+    const u32 retained_levels = static_cast<u32>(info.range.extent.levels) > omitted_in_view
+        ? static_cast<u32>(info.range.extent.levels) - omitted_in_view : 1;
+    const u32 base_level = std::min(translated_base, resource_levels - 1);
     const u32 base_layer = std::min(static_cast<u32>(info.range.base.layer), resource_array - 1);
-    const u32 levels = std::clamp(static_cast<u32>(info.range.extent.levels), 1U,
+    const u32 levels = std::clamp(retained_levels, 1U,
                                   resource_levels - base_level);
     const u32 layers = std::clamp(static_cast<u32>(info.range.extent.layers), 1U,
                                   resource_array - base_layer);

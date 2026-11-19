@@ -155,6 +155,8 @@ void ArmDynarmic32::MakeJit(Common::PageTable* page_table) {
     config.define_unpredictable_behaviour = true;
 
     if (page_table) {
+        config.software_tlb_entries = g_software_tlb_entries.load(std::memory_order_relaxed);
+        config.page_table_epoch = &Common::jit_mapping_epoch;
         constexpr size_t PageBits = 12;
         constexpr size_t NumPageTableEntries = 1 << (32 - PageBits);
 

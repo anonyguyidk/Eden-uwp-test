@@ -1121,6 +1121,14 @@ private:
                 SettingsRow item{Kind::Choice, std::wstring{Tr(SystemRowTitle(row))},
                                  std::wstring{Tr(SystemRowHint(row))}, SystemRowValue(view.system, row)};
                 switch (row) {
+                case SystemPage::JitCache: item.title = L"JIT cache per core"; item.hint = L"32-48 MiB. Applies on next launch."; break;
+                case SystemPage::UploadRing: item.title = L"Upload ring size"; item.hint = L"32 / 64 / 128 MiB. Applies on next launch."; break;
+                case SystemPage::ShaderCache: item.title = L"Linked shader cache"; item.hint = L"0-16 MiB memoization budget. Applies on next launch."; break;
+                case SystemPage::ShaderEviction: item.title = L"Shader eviction aggressiveness"; item.hint = L"1-4x shorter idle PSO lifetime. Applies on next launch."; break;
+                case SystemPage::AstcMipDrop: item.title = L"ASTC top mip omission"; item.hint = L"Experimental 0-2 levels. Changes texture size/LOD; unsupported copies require off."; break;
+                case SystemPage::SoftwareTlb: item.title = L"Software TLB"; item.hint = L"Experimental inline translation cache: off / 1 / 2 entries. Next launch."; break;
+                case SystemPage::DiskBytecode: item.title = L"Shader bytecode storage"; item.hint = L"Zstd disk backing releases raw DXIL after PSO creation. Next launch."; break;
+                case SystemPage::RedundantBinds: item.title = L"Skip redundant bindings"; item.hint = L"Root signatures, vertex buffers and render targets. Applies on next launch."; break;
                 case SystemPage::UserName: item.kind = Kind::Open; break;
                 case SystemPage::ShaderShare: item.kind = Kind::Open; break;
                 case SystemPage::Updates: item.kind = Kind::Open; break;

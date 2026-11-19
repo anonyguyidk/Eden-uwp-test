@@ -484,9 +484,15 @@ Image::Image(TextureCacheRuntime& runtime_, const VideoCommon::ImageInfo& info_,
                                               D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE))) {
         resource_flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
+    // Only compressed, sampled ASTC representations; attachment/storage formats are excluded.
+    dropped_mips = AstcMipDrop(astc_mip_drop.load(std::memory_order_relaxed),
+        info_.size.width, info_.size.height, info_.resources.levels, info_.resources.layers,
+        !native_blocks && VideoCore::Surface::IsPixelFormatASTC(info_.format) && info_.type == ImageType::e2D &&
+        info_.size.depth == 1 && info_.num_samples == 1 && !info_.is_sparse &&
+        (format.copy_format == PixelFormat::BC3_UNORM || format.copy_format == PixelFormat::BC1_RGBA_UNORM));
     const auto [samples_x, samples_y] = VideoCommon::SamplesLog2(info_.num_samples);
-    u64 width = std::max<u64>(1, info_.size.width >> samples_x);
-    u32 height = std::max(1U, info_.size.height >> samples_y);
+    u64 width = std::max<u64>(1, info_.size.width >> (samples_x + dropped_mips));
+    u32 height = std::max(1U, info_.size.height >> (samples_y + dropped_mips));
     // D3D12 requires block-compressed top levels to be whole blocks; the guest's may not be.
     const u32 block_w = VideoCore::Surface::DefaultBlockWidth(format.copy_format);
     const u32 block_h = VideoCore::Surface::DefaultBlockHeight(format.copy_format);
@@ -498,7 +504,7 @@ Image::Image(TextureCacheRuntime& runtime_, const VideoCommon::ImageInfo& info_,
         .Dimension = Dimension(info_.type), .Alignment = 0, .Width = width, .Height = height,
         .DepthOrArraySize = static_cast<u16>(info_.type == ImageType::e3D ? info_.size.depth
                                                                           : info_.resources.layers),
-        .MipLevels = static_cast<u16>(info_.resources.levels), .Format = format.resource,
+        .MipLevels = static_cast<u16>(info_.resources.levels - dropped_mips), .Format = format.resource,
         .SampleDesc = {.Count = info_.num_samples, .Quality = 0},
         .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN, .Flags = resource_flags,
     };
@@ -619,9 +625,9 @@ Image* Image::PrepareDepthFeedback() {
 }
 
 u32 Image::Subresource(s32 level, s32 layer, u32 plane) const noexcept {
-    const u32 levels = static_cast<u32>(info.resources.levels);
+    const u32 levels = static_cast<u32>(info.resources.levels) - dropped_mips;
     const u32 layers = info.type == ImageType::e3D ? 1U : static_cast<u32>(info.resources.layers);
-    return static_cast<u32>(level) + static_cast<u32>(layer) * levels + plane * levels * layers;
+    return static_cast<u32>(level) - dropped_mips + static_cast<u32>(layer) * levels + plane * levels * layers;
 }
 
 void Image::Transition(D3D12_RESOURCE_STATES next, BarrierBatch* batch) {
@@ -714,6 +720,7 @@ ID3D12Resource* Image::SliceArray() {
 }
 
 ID3D12Resource* Image::Reinterpreted(DXGI_FORMAT family) {
+    if (dropped_mips) throw std::runtime_error("ASTC mip-drop reinterpretation requires astc_mip_drop=0");
     if (reinterpreted) {
         return reinterpreted->GetDesc().Format == family ? reinterpreted.Get() : nullptr;
     }

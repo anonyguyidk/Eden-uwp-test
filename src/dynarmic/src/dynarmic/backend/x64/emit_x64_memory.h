@@ -74,6 +74,50 @@ void EmitDetectMisalignedVAddr(BlockOfCode& code, EmitContext& ctx, size_t bitsi
 }
 
 template<typename EmitContext>
+bool EmitSoftwareTlb(BlockOfCode& code, EmitContext& ctx, Xbyak::Label& abort,
+                     Xbyak::Reg64 index, Xbyak::Reg64 page) {
+    if (!ctx.conf.page_table_epoch || ctx.conf.software_tlb_entries == 0 ||
+        ctx.conf.software_tlb_entries > 2 || !ctx.conf.absolute_offset_page_table ||
+        ctx.conf.page_table_pointer_mask != 0 || ctx.conf.page_table_marked_bit ||
+        ctx.conf.page_table_sign_extension) return false;
+    const auto slot = ctx.reg_alloc.ScratchGpr(code);
+    const auto epoch = ctx.reg_alloc.ScratchGpr(code);
+    const auto tag = ctx.reg_alloc.ScratchGpr(code);
+    Xbyak::Label miss, done;
+    code.mov(tag, index);
+    code.mov(slot, index);
+    code.and_(slot, ctx.conf.software_tlb_entries - 1);
+    code.shl(slot, 5);
+    code.lea(slot, ptr[code.ABI_JIT_PTR + slot + code.GetJitStateInfo().offsetof_software_tlb]);
+    code.mov(epoch, reinterpret_cast<u64>(ctx.conf.page_table_epoch));
+    code.mov(epoch, qword[epoch]);
+    code.cmp(qword[slot + 16], epoch);
+    code.jne(miss, code.T_NEAR);
+    code.cmp(qword[slot], tag);
+    code.jne(miss, code.T_NEAR);
+    code.mov(page, qword[slot + 8]);
+    code.jmp(done, code.T_NEAR);
+    code.L(miss);
+    if (ctx.conf.page_table_log2_stride > 3) {
+        code.mov(page, tag);
+        code.shl(page, int(ctx.conf.page_table_log2_stride));
+        code.mov(page, qword[r14 + page]);
+    } else {
+        code.mov(page, qword[r14 + tag * int(1 << ctx.conf.page_table_log2_stride)]);
+    }
+    code.test(page, page);
+    code.jz(abort, code.T_NEAR);
+    code.mov(qword[slot], tag);
+    code.mov(qword[slot + 8], page);
+    code.mov(qword[slot + 16], epoch);
+    code.L(done);
+    ctx.reg_alloc.Release(tag);
+    ctx.reg_alloc.Release(epoch);
+    ctx.reg_alloc.Release(slot);
+    return true;
+}
+
+template<typename EmitContext>
 Xbyak::RegExp EmitVAddrLookup(BlockOfCode& code, EmitContext& ctx, size_t bitsize, Xbyak::Label& abort, Xbyak::Reg64 vaddr);
 
 template<>
@@ -85,6 +129,8 @@ template<>
 
     code.mov(tmp, vaddr);
     code.shr(tmp, int(page_table_const_bits));
+
+    if (EmitSoftwareTlb(code, ctx, abort, tmp, page)) return page + vaddr;
 
     if (ctx.conf.page_table_log2_stride > 3) {
         code.shl(tmp, int(ctx.conf.page_table_log2_stride));
@@ -160,6 +206,8 @@ template<>
         code.test(tmp, u32(-(1 << valid_page_index_bits)));
         code.jnz(abort, code.T_NEAR);
     }
+
+    if (EmitSoftwareTlb(code, ctx, abort, tmp, page)) return page + vaddr;
 
     if (ctx.conf.page_table_log2_stride > 3) {
         code.shl(tmp, int(ctx.conf.page_table_log2_stride));

@@ -37,7 +37,7 @@ jobs:
       - run: python3 tools/xbox/tests/release.py
 
   build:
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/build-uwp.yml
     with:
       package: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.package) }}
       package_revision: ${{ format('{0}', github.run_number) }}
@@ -72,7 +72,7 @@ jobs:
       - name: Publish ci-latest
         run: |
           set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('out/build-info.json'))['version'])")
+          version=$(python3 -c "from pathlib import Path; packages=list(Path('out').glob('EdenUWP_*_x64.appx')); assert len(packages)==1; print(packages[0].name.removeprefix('EdenUWP_').removesuffix('_x64.appx'))")
           echo "VERSION=$version" >> "$GITHUB_ENV"
           gh release view ci-latest >/dev/null 2>&1 || gh release create ci-latest --prerelease --target "$GITHUB_SHA" \
             --title "CI build" --notes "Automatic builds of main for testers. Not an official release."

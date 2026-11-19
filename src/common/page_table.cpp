@@ -17,6 +17,7 @@ void PageTable::Resize(std::size_t address_space_width_in_bits, std::size_t page
     auto const num_page_table_entries = 1ULL << (address_space_width_in_bits - page_bits);
     entries.ResizeAndClear(num_page_table_entries);
     jit_entries.ResizeAndClear(num_page_table_entries);
+    jit_mapping_epoch.fetch_add(1, std::memory_order_release);
     current_address_space_width_in_bits = address_space_width_in_bits;
     current_page_bits = page_bits;
 }

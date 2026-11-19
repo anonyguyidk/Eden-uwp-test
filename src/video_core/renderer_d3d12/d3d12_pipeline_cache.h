@@ -65,6 +65,7 @@ void SetGeometryDroppedShader(u64 unique_hash);
 /// tell a problem with rebuilt PSOs from one in what they draw. Set before boot (boot.cfg
 /// "pso_eviction=0").
 void SetPipelineEviction(bool enabled);
+void SetPipelineTuning(u32 shader_cache_mib, u32 eviction_aggressiveness);
 
 /// Diagnostics: false never builds dormant PSOs ahead of their first draw, for A/B timing of the
 /// background prewarm. Set before boot (boot.cfg "pso_prewarm=0").

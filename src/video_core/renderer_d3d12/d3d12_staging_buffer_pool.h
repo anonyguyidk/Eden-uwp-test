@@ -18,6 +18,8 @@ namespace D3D12 {
 
 class Scheduler;
 
+void SetUploadRingSize(u32 mib);
+
 enum class MemoryUsage {
     Upload,   ///< CPU writes, GPU reads (UPLOAD heap, always GENERIC_READ)
     Download, ///< GPU writes, CPU reads (READBACK heap, always COPY_DEST)

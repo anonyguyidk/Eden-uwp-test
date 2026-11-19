@@ -38,6 +38,10 @@ constexpr HaltReason TranslateHaltReason(Dynarmic::HaltReason hr) {
 /// is cleared at once together with every block's metadata (links, ranges), so a smaller one
 /// bounds the whole JIT's memory at the cost of a recompilation burst each time it fills.
 inline std::atomic<u32> g_jit_code_cache_size{};
+inline std::atomic<u32> g_software_tlb_entries{};
+inline void SetSoftwareTlbEntries(u32 entries) {
+    g_software_tlb_entries.store(entries <= 2 ? entries : 0, std::memory_order_relaxed);
+}
 inline void SetJitCodeCacheSize(u32 bytes) {
     g_jit_code_cache_size.store(bytes, std::memory_order_relaxed);
 }

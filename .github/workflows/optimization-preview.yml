@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Optimization preview
+
+on:
+  push:
+    branches: [coderabbit/uwp-memory-d3d12-optimization/7597b0d6]
+    paths-ignore: ['docs/**', '**/*.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: optimization-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'anonyguyidk/Eden-uwp-test'
+    uses: ./.github/workflows/build-uwp.yml
+    with:
+      package: true
+      package_revision: ${{ format('{0}', github.run_number) }}
+    secrets: inherit
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: uwp-memory-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: eden-uwp-package
+          path: xbox-install
+      - name: Validate and bundle installation files
+        shell: python
+        run: |
+          from pathlib import Path
+          import zipfile
+          root = Path('xbox-install')
+          files = sorted(p for p in root.rglob('*') if p.is_file())
+          allowed = {'.appx', '.msix', '.appxbundle', '.msixbundle', '.cer'}
+          assert files and all(p.suffix.lower() in allowed for p in files), 'Unexpected installation file'
+          assert [p.relative_to(root).as_posix() for p in files if p.suffix.lower() == '.cer'] == ['EdenUWP.cer'], 'Expected one signing certificate'
+          assert len(list(root.glob('EdenUWP_*_x64.appx'))) == 1, 'Expected one emulator package'
+          assert any('VCLibs' in p.name for p in files), 'Missing VCLibs dependency'
+          with zipfile.ZipFile('EdenUWP-Xbox-Experimental.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for path in files:
+                  archive.write(path, path.relative_to(root))
+      - name: Publish experimental release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp docs/xbox/optimization-release.md "$RUNNER_TEMP/release-notes.md"
+          printf '\n\n**Source:** `%s` · [Build log](%s/%s/actions/runs/%s)\n' \
+            "$GITHUB_SHA" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG" EdenUWP-Xbox-Experimental.zip --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Eden UWP · Experimental memory build #$GITHUB_RUN_NUMBER" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

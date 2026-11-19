@@ -66,6 +66,9 @@ CpuDescriptorAllocator::CpuDescriptorAllocator(ID3D12Device* device_,
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE CpuDescriptorAllocator::Allocate() {
+    if (type == D3D12_DESCRIPTOR_HEAP_TYPE_RTV || type == D3D12_DESCRIPTOR_HEAP_TYPE_DSV) {
+        attachment_allocations.fetch_add(1, std::memory_order_relaxed);
+    }
     std::scoped_lock lock{mutex};
     ReclaimRecorded();
     if (free_list.empty()) {

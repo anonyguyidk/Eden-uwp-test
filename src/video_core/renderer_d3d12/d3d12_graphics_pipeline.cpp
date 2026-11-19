@@ -345,6 +345,7 @@ GraphicsPipeline::GraphicsPipeline(const Device& device_,
                 }
             }
         }
+        if (compiled && !build_pso) SpillBytecode(true);
         FT::Mark(FT::Event::PipelineBuildDone, trace_pipeline, pipeline_state.Get() != nullptr);
         // Without a PSO yet, a pipeline whose DXIL failed is still ready: its draws are skipped.
         Publish(compiled && !build_pso ? State::Dormant : State::Ready);
@@ -356,6 +357,52 @@ GraphicsPipeline::GraphicsPipeline(const Device& device_,
 }
 
 GraphicsPipeline::~GraphicsPipeline() = default;
+
+GraphicsPipeline::SharedDxilStages GraphicsPipeline::ReadBytecode() const {
+    const auto bytes = bytecode_file->Read();
+    struct RestoredBytecode {
+        DxilStages stages;
+        Common::MemoryCharge charge;
+    };
+    auto restored = std::make_shared<RestoredBytecode>();
+    size_t offset = 0;
+    u64 allocated_bytes = 0;
+    for (auto& stage : restored->stages) {
+        if (bytes.size() - offset < sizeof(u32)) throw std::runtime_error("Truncated DXIL backing file");
+        u32 length;
+        std::memcpy(&length, bytes.data() + offset, sizeof(length));
+        offset += sizeof(length);
+        if (length > bytes.size() - offset) throw std::runtime_error("Invalid DXIL stage length");
+        stage.assign(bytes.begin() + offset, bytes.begin() + offset + length);
+        offset += length;
+        allocated_bytes += stage.capacity();
+    }
+    if (offset != bytes.size()) throw std::runtime_error("Invalid DXIL backing file tail");
+    restored->charge = Common::MemoryCharge(Common::MemoryAccount::ShaderBytecode, allocated_bytes);
+    return SharedDxilStages(restored, &restored->stages);
+}
+
+void GraphicsPipeline::SpillBytecode(bool allow_dormant) {
+    if (!disk_bytecode || !dxil || (!pipeline_state && !allow_dormant)) return;
+    if (!bytecode_file) {
+        size_t size = NUM_STAGES * sizeof(u32);
+        for (const auto& stage : *dxil) {
+            if (stage.size() > 64 * 1024 * 1024 - size) return;
+            size += stage.size();
+        }
+        std::vector<u8> bytes;
+        bytes.reserve(size);
+        for (const auto& stage : *dxil) {
+            const u32 length = static_cast<u32>(stage.size());
+            const auto* raw = reinterpret_cast<const u8*>(&length);
+            bytes.insert(bytes.end(), raw, raw + sizeof(length));
+            bytes.insert(bytes.end(), stage.begin(), stage.end());
+        }
+        bytecode_file = BytecodeStore::Write(bytes);
+    }
+    if (bytecode_file) dxil.reset(); // Disk failure preserves the in-memory fallback.
+}
+
 
 void GraphicsPipeline::QueueBuild(Common::ThreadWorker* worker, Common::UniqueFunction<void> job) {
     if (!worker) {
@@ -414,7 +461,7 @@ bool GraphicsPipeline::Wake(Common::ThreadWorker& worker) {
 bool GraphicsPipeline::Evict(Scheduler& scheduler) {
     // Only the GPU thread draws with, wakes and evicts pipelines, so a ready one stays ready here.
     if (build_state.load(std::memory_order::acquire) != State::Ready || !pipeline_state ||
-        !dxil) {
+        (!dxil && !bytecode_file)) {
         return false;
     }
     build_state.store(State::Dormant, std::memory_order::release);
@@ -688,11 +735,11 @@ void GraphicsPipeline::Configure(bool is_indexed, const PipelineBindContext& con
 }
 
 D3D12_GRAPHICS_PIPELINE_STATE_DESC GraphicsPipeline::Describe(
-    std::vector<D3D12_INPUT_ELEMENT_DESC>& elements) const {
+    std::vector<D3D12_INPUT_ELEMENT_DESC>& elements, const SharedDxilStages& bytecode) const {
     using VideoCore::Surface::PixelFormatFromDepthFormat;
     using VideoCore::Surface::PixelFormatFromRenderTargetFormat;
 
-    const auto& stages = *dxil;
+    const auto& stages = *bytecode;
     const FixedPipelineState& state = key.state;
     const FixedPipelineState::DynamicState& dynamic = state.dynamic_state;
 
@@ -829,7 +876,8 @@ D3D12_GRAPHICS_PIPELINE_STATE_DESC GraphicsPipeline::Describe(
 
 ComPtr<ID3D12PipelineState> GraphicsPipeline::CreatePickProbePipeline(
     std::span<const u8> ps, bool float_outputs) const {
-    if (!dxil || key.unique_hashes[1] != 0x17d43777e7441cf4ULL ||
+    const auto lease = dxil ? dxil : (bytecode_file ? ReadBytecode() : SharedDxilStages{});
+    if (!lease || key.unique_hashes[1] != 0x17d43777e7441cf4ULL ||
         key.unique_hashes[5] != 0x0b7e4e46d61d3694ULL || has_stage[1] || has_stage[2] ||
         has_stage[3] || layout.NumResourceDescriptors() != 5 ||
         layout.NumSamplerDescriptors() != 4) {
@@ -841,7 +889,7 @@ ComPtr<ID3D12PipelineState> GraphicsPipeline::CreatePickProbePipeline(
             throw std::runtime_error("pick probe: side effects rejected");
     }
     std::vector<D3D12_INPUT_ELEMENT_DESC> elements;
-    auto desc = Describe(elements);
+    auto desc = Describe(elements, lease);
     if (desc.SampleDesc.Count != 1 || desc.DSVFormat != DXGI_FORMAT_UNKNOWN ||
         desc.NumRenderTargets != 3 || desc.DepthStencilState.DepthEnable ||
         desc.DepthStencilState.StencilEnable)
@@ -861,7 +909,8 @@ ComPtr<ID3D12PipelineState> GraphicsPipeline::CreateMaterialProbePipeline(
     bool reflection_probe, DXGI_FORMAT output_format) const {
     // Private diagnostic sidecars have a fixed linked interface. Reject every other
     // pipeline rather than applying a material-specific replacement to normal draws.
-    if (!dxil || has_stage[1] || has_stage[2] || has_stage[3]) {
+    const auto lease = dxil ? dxil : (bytecode_file ? ReadBytecode() : SharedDxilStages{});
+    if (!lease || has_stage[1] || has_stage[2] || has_stage[3]) {
         throw std::runtime_error("material GPU probe: unsupported stages");
     }
     if (output_format != DXGI_FORMAT_R32G32B32A32_FLOAT &&
@@ -904,7 +953,7 @@ ComPtr<ID3D12PipelineState> GraphicsPipeline::CreateMaterialProbePipeline(
         }
     }
     std::vector<D3D12_INPUT_ELEMENT_DESC> elements;
-    auto desc = Describe(elements);
+    auto desc = Describe(elements, lease);
     if ((!reflection_probe && desc.DSVFormat != DXGI_FORMAT_UNKNOWN) || desc.SampleDesc.Count != 1 ||
         desc.PrimitiveTopologyType != D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE) {
         throw std::runtime_error("material GPU probe: depth/MSAA/topology unsupported");
@@ -1026,13 +1075,14 @@ void GraphicsPipeline::Build(bool flatten_on_fault) try {
         pipeline_state.Reset();
         return;
     }
+    if (!dxil && bytecode_file) dxil = ReadBytecode();
     const auto& stages = *dxil;
     std::vector<D3D12_INPUT_ELEMENT_DESC> elements;
-    auto desc = Describe(elements);
+    auto desc = Describe(elements, dxil);
     const size_t num_attachments = desc.NumRenderTargets;
     // Only with a depth target: without one there is nothing to test against.
     const bool bounds_test = depth_bounds && desc.DSVFormat != DXGI_FORMAT_UNKNOWN;
-    auto host_key = MakeGraphicsPsoKey(desc, dxil);
+    auto host_key = MakeGraphicsPsoKey(desc, dxil, disk_bytecode);
     host_key.state.push_back(bounds_test ? 1U : 0U);
     const u64 index_bytes = sizeof(GraphicsPsoCache::Entry) + 128 +
                             host_key.state.capacity() * sizeof(u32);
@@ -1179,6 +1229,7 @@ void GraphicsPipeline::Build(bool flatten_on_fault) try {
              static_cast<u32>(desc.RTVFormats[0]), static_cast<u32>(desc.DSVFormat),
              layout.NumResourceDescriptors(), layout.NumSamplerDescriptors(),
              ShaderFeatureFlags(stages[0]), ShaderFeatureFlags(stages[4]));
+    SpillBytecode();
 } catch (const std::exception& exception) {
     pipeline_state.Reset();
     shared_pso.reset();

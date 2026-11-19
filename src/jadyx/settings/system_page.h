@@ -18,7 +18,7 @@
 namespace Jadyx {
 
 struct SystemPage {
-    enum Row : std::size_t { UserName, InterfaceLanguage, GameLanguage, Region, AdultMods, PerformanceStats, PulseSessions, PlayTime, ShaderShare, ClearCache, Updates, RowCount };
+    enum Row : std::size_t { UserName, InterfaceLanguage, GameLanguage, Region, AdultMods, PerformanceStats, PulseSessions, PlayTime, ShaderShare, JitCache, UploadRing, ShaderCache, ShaderEviction, AstcMipDrop, SoftwareTlb, DiskBytecode, RedundantBinds, ClearCache, Updates, RowCount };
     /// What the text editor is changing.
     enum class Editing : std::uint8_t { Name, ShaderShareUrl };
 
@@ -80,6 +80,32 @@ inline SystemPageEffect HandleSystemInput(SystemPage& page, SystemInput input) {
     const bool back = input == SystemInput::Left;
     auto& settings = page.settings;
     switch (static_cast<Row>(page.selected)) {
+    case Row::JitCache:
+        settings.optimization.jit_cache_mib = settings.optimization.jit_cache_mib == 32 ? 48 : 32;
+        return SystemPageEffect::Changed;
+    case Row::UploadRing: {
+        auto& size = settings.optimization.upload_ring_mib;
+        size = back ? (size == 32 ? 128 : size / 2) : (size == 128 ? 32 : size * 2);
+        return SystemPageEffect::Changed;
+    }
+    case Row::ShaderCache:
+        settings.optimization.shader_cache_mib = (settings.optimization.shader_cache_mib + (back ? 16 : 1)) % 17;
+        return SystemPageEffect::Changed;
+    case Row::ShaderEviction:
+        settings.optimization.eviction_aggressiveness = (settings.optimization.eviction_aggressiveness - 1 + (back ? 3 : 1)) % 4 + 1;
+        return SystemPageEffect::Changed;
+    case Row::AstcMipDrop:
+        settings.optimization.astc_mip_drop = (settings.optimization.astc_mip_drop + (back ? 2 : 1)) % 3;
+        return SystemPageEffect::Changed;
+    case Row::SoftwareTlb:
+        settings.optimization.software_tlb_entries = (settings.optimization.software_tlb_entries + (back ? 2 : 1)) % 3;
+        return SystemPageEffect::Changed;
+    case Row::DiskBytecode:
+        settings.optimization.disk_bytecode = !settings.optimization.disk_bytecode;
+        return SystemPageEffect::Changed;
+    case Row::RedundantBinds:
+        settings.optimization.redundant_binds = !settings.optimization.redundant_binds;
+        return SystemPageEffect::Changed;
     case Row::UserName:
         if (input != SystemInput::Confirm) return SystemPageEffect::None;
         page.name_editor.emplace(settings.user_name, MaxUserNameLength);
@@ -195,6 +221,14 @@ inline std::wstring SystemRowValue(const SystemPage& page, SystemPage::Row row) 
         return I18n::Format(Text::AutomaticValue, {value});
     };
     switch (row) {
+    case SystemPage::JitCache: return std::to_wstring(settings.optimization.jit_cache_mib) + L" MiB/core";
+    case SystemPage::UploadRing: return std::to_wstring(settings.optimization.upload_ring_mib) + L" MiB";
+    case SystemPage::ShaderCache: return std::to_wstring(settings.optimization.shader_cache_mib) + L" MiB";
+    case SystemPage::ShaderEviction: return std::to_wstring(settings.optimization.eviction_aggressiveness) + L"x";
+    case SystemPage::AstcMipDrop: return std::to_wstring(settings.optimization.astc_mip_drop) + L" levels";
+    case SystemPage::SoftwareTlb: return std::to_wstring(settings.optimization.software_tlb_entries) + L" entries";
+    case SystemPage::DiskBytecode: return settings.optimization.disk_bytecode ? L"Disk" : L"Memory";
+    case SystemPage::RedundantBinds: return settings.optimization.redundant_binds ? L"On" : L"Off";
     case SystemPage::UserName:
         return settings.user_name.empty() ? std::wstring{DefaultUserName} : settings.user_name;
     case SystemPage::InterfaceLanguage:

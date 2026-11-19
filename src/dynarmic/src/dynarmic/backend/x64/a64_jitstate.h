@@ -79,6 +79,8 @@ struct A64JitState {
         const u64 pc_u64 = pc & A64::LocationDescriptor::pc_mask;
         return pc_u64 | fpcr_u64;
     }
+    // Two 32-byte direct-mapped translation slots: tag, offset, epoch, reserved.
+    std::array<u64, 8> software_tlb{};
 };
 
 #ifdef _MSC_VER
