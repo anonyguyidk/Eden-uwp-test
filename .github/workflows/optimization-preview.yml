@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 name: Optimization preview
+run-name: "Xbox optimization preview - ${{ github.ref_name }}"
 
 on:
   workflow_dispatch:
