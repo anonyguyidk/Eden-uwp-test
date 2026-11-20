@@ -8,7 +8,7 @@
 namespace Jadyx {
 struct DevelopmentFolderBrowser {
     static constexpr auto Root = L"D:\\DevelopmentFiles";
-    static constexpr size_t UseFolder = 0, Parent = 1, Cancel = 2, FirstFolder = 3;
+    static constexpr size_t UseFolder = 0, Parent = 1, Cancel = 2, Authorize = 3, FirstFolder = 4;
     bool open{}, busy{}, ready{};
     size_t selected{};
     std::wstring path, notice;

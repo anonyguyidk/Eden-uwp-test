@@ -38,7 +38,15 @@ For console-mode changes, start the game from a cold boot: discard its kept Puls
 
 **Settings → File Manager → Folder picker = DevelopmentFiles** selects the in-app `D:\DevelopmentFiles\` browser. A/Enter opens folders or selects **Use this folder**; Left goes up; B/Escape cancels. The choice persists; the Windows picker remains available.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:530b4eaa4cc2567ba7772fb41394af42fc9e29c8f4ff50f1cd5eaba1de96bcc5 -->
+
 Use it for game folders, keys and firmware imports, update/DLC authorization and the game's Mods add-folder action. Supported mod layouts include `cheats/<build-id>.txt`, so cheat packs can be imported through Mods. Existing validation and install confirmation remain in effect. Create your folders through Xbox Device Portal; access is subject to the console's UWP permissions. If denied, use Network import. Directories show at most 2048 child folders.
+
+If access is denied, choose **Choose accessible folder** in the browser. Where the system picker is available, its selected folder becomes the browser root and is remembered through FutureAccessList. Child and parent navigation retain the authorized StorageFolder objects. Parent navigation stops at that selected root. Picker cancellation or failure leaves the browser open; cancel it and use Network import if the console provides no picker. This does not bypass Xbox filesystem permissions. Microsoft documents that [broadFileSystemAccess is not supported on Xbox](https://learn.microsoft.com/en-us/windows/uwp/files/file-access-permissions).
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- coderabbit-ai-generated:v1 -->
 

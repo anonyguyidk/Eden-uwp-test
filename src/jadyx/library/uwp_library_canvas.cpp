@@ -219,6 +219,7 @@ public:
                 const std::wstring label = i == DevelopmentFolderBrowser::UseFolder ? L"Use this folder" :
                     i == DevelopmentFolderBrowser::Parent ? L"Parent folder" :
                     i == DevelopmentFolderBrowser::Cancel ? L"Cancel" :
+                    i == DevelopmentFolderBrowser::Authorize ? L"Choose accessible folder" :
                     browser.folders[i - DevelopmentFolderBrowser::FirstFolder];
                 Type(label, TypeRole::LabelLarge, 100, y + 10, 1080, focused ? Palette::Text : Palette::TextSecondary);
                 AddHit(80, y, 1120, 44, LibraryHit::FolderBrowserRow, i);

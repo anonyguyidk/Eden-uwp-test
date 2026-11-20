@@ -31,6 +31,7 @@
 #include <winrt/Windows.System.Profile.h>
 #include <winrt/Windows.Graphics.Display.h>
 #include <winrt/Windows.Storage.Pickers.h>
+#include <winrt/Windows.Storage.AccessCache.h>
 #include <winrt/Windows.Storage.Search.h>
 #include "jadyx/cheats/cheat_session.h"
 #include "jadyx/cheats/cheats_page.h"
@@ -204,6 +205,8 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
     using winrt::Windows::Storage::StorageFolder;
     winrt::Windows::Foundation::IAsyncOperation<StorageFolder> picker{nullptr};
     StorageFolder picked_folder{nullptr};
+    bool picker_for_browser{};
+    constexpr auto browser_token = L"development_browser_root";
     struct FolderListing {
         StorageFolder folder{nullptr};
         std::vector<StorageFolder> children;
@@ -213,15 +216,24 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
     FolderListing browsed;
     std::vector<StorageFolder> folder_parents;
     bool folder_descending{}, folder_ascending{};
-    auto list_folder = [&](std::wstring path, bool descending) {
+    auto list_folder = [&](StorageFolder folder, bool descending) {
         configuration.browser.busy = true;
         configuration.browser.notice.clear();
         folder_descending = descending;
-        std::packaged_task<FolderListing()> task{[path = std::move(path)] {
+        std::packaged_task<FolderListing()> task{[folder = std::move(folder), browser_token] {
             winrt::init_apartment(winrt::apartment_type::multi_threaded);
             struct Uninitialize { ~Uninitialize() { winrt::uninit_apartment(); } } guard;
             FolderListing result;
-            result.folder = StorageFolder::GetFolderFromPathAsync(path).get();
+            result.folder = folder;
+            if (!result.folder) {
+                auto access = winrt::Windows::Storage::AccessCache::StorageApplicationPermissions::FutureAccessList();
+                if (access.ContainsItem(browser_token)) {
+                    try { result.folder = access.GetFolderAsync(browser_token).get(); }
+                    catch (const winrt::hresult_error&) { access.Remove(browser_token); }
+                }
+                if (!result.folder)
+                    result.folder = StorageFolder::GetFolderFromPathAsync(DevelopmentFolderBrowser::Root).get();
+            }
             // A bounded batch avoids holding an unbounded external directory in memory.
             const auto folders = result.folder.GetFoldersAsync(winrt::Windows::Storage::Search::CommonFolderQuery::DefaultQuery, 0, 2049).get();
             for (const auto& child : folders) result.children.push_back(child);
@@ -241,7 +253,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
             folder_parents.clear();
             configuration.browser = {};
             configuration.browser.open = true;
-            list_folder(DevelopmentFolderBrowser::Root, false);
+            list_folder(nullptr, false);
         } else {
             winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
             folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
@@ -1248,7 +1260,8 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                     browser.selected = 0;
                 } catch (const winrt::hresult_error& e) {
                     browser.notice = L"Cannot open folder: " + std::wstring{e.message()} +
-                        L". Create D:\\DevelopmentFiles using Xbox Device Portal. If access is denied, use the Windows picker or Network import.";
+                        L". Choose accessible folder to request access through the system picker, or cancel and use Network import.";
+                    if (!browser.ready) browser.selected = DevelopmentFolderBrowser::Authorize;
                 } catch (...) { browser.notice = L"Cannot read this folder."; }
                 folder_ascending = false;
                 browser.busy = false;
@@ -1263,14 +1276,25 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                     if (!folder_parents.empty()) {
                         const auto parent = folder_parents.back();
                         folder_ascending = true;
-                        list_folder(parent.Path().c_str(), false);
+                        list_folder(parent, false);
+                    }
+                } else if (actions & Play && browser.selected == DevelopmentFolderBrowser::Authorize) {
+                    try {
+                        winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
+                        folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
+                        folder_picker.FileTypeFilter().Append(L"*");
+                        picker = folder_picker.PickSingleFolderAsync();
+                        picker_for_browser = true;
+                        browser.busy = true;
+                    } catch (const winrt::hresult_error& e) {
+                        browser.notice = L"System picker unavailable: " + std::wstring{e.message()} + L". Cancel and use Network import.";
                     }
                 } else if (actions & Play && browser.ready) {
                     if (browser.selected == DevelopmentFolderBrowser::UseFolder) {
                         picked_folder = browsed.folder;
                         browser.open = false;
                     } else if (browser.selected >= DevelopmentFolderBrowser::FirstFolder) {
-                        list_folder(browsed.children[browser.selected - DevelopmentFolderBrowser::FirstFolder].Path().c_str(), true);
+                        list_folder(browsed.children[browser.selected - DevelopmentFolderBrowser::FirstFolder], true);
                     }
                 }
             }
@@ -1283,7 +1307,22 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
             if (picked_folder || picker.Status() != winrt::Windows::Foundation::AsyncStatus::Started) {
                 try {
                     auto folder = picked_folder ? std::exchange(picked_folder, StorageFolder{nullptr}) : picker.GetResults();
-                    if (folder && picker_kind == 0) start_scan(folder);
+                    if (picker_for_browser) {
+                        configuration.browser.busy = false;
+                        if (folder) {
+                            try {
+                                winrt::Windows::Storage::AccessCache::StorageApplicationPermissions::FutureAccessList().AddOrReplace(browser_token, folder);
+                            } catch (const winrt::hresult_error&) {
+                                configuration.notice = L"Folder access could not be remembered. Select it again next time.";
+                            }
+                            folder_parents.clear();
+                            browsed = {};
+                            configuration.browser.ready = false;
+                            configuration.browser.folders.clear();
+                            list_folder(folder, false);
+                        } else configuration.browser.notice = L"Selection cancelled. Choose a folder or cancel and use Network import.";
+                        dirty = true;
+                    } else if (folder && picker_kind == 0) start_scan(folder);
                     else if (folder && picker_kind == 3 && content_session) content_session->AuthorizeFolder(folder);
                     else if (folder && picker_kind == 4 && mod_session) mod_session->AddFolder(folder);
                     else if (picker_kind >= 3) {} // A page's folder whose page closed meanwhile.
@@ -1305,9 +1344,14 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                         import_worker = std::jthread(std::move(task));
                     } else { configuration.notice = Tr(T::SelectionCancelled); dirty = true; }
                 } catch (const winrt::hresult_error& e) {
-                    configuration.notice = I18n::Format(T::FolderPickFailed, {e.message()}); dirty = true;
+                    if (picker_for_browser) {
+                        configuration.browser.busy = false;
+                        configuration.browser.notice = L"System picker failed: " + std::wstring{e.message()} + L". Cancel and use Network import.";
+                    } else configuration.notice = I18n::Format(T::FolderPickFailed, {e.message()});
+                    dirty = true;
                 }
                 picker = nullptr;
+                picker_for_browser = false;
                 previous = {};
                 stick_navigation.Reset(); manager_dpad.Reset(); trigger_tabs.Reset();
             }

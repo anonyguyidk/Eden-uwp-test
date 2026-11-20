@@ -85,13 +85,13 @@ int main() {
     DevelopmentFolderBrowser browser;
     assert(std::wstring_view{browser.Root} == L"D:\\DevelopmentFiles");
     browser.Move(true);
-    assert(browser.selected == DevelopmentFolderBrowser::Cancel);
+    assert(browser.selected == DevelopmentFolderBrowser::Authorize);
     browser.Move(false);
     assert(browser.selected == 0);
     browser.folders = {L"Games", L"Firmware", L"Keys"};
     browser.Move(true);
-    assert(browser.selected == 5);
-    for (size_t i = 0; i < 12; ++i) browser.Move(false);
-    assert(browser.selected == 5);
+    assert(browser.selected == 6);
+    for (size_t i = 0; i < 14; ++i) browser.Move(false);
+    assert(browser.selected == 6);
     std::puts("Graphics profiles, bounded settings, inheritance, navigation and folder rows: passed");
 }

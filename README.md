@@ -98,7 +98,15 @@ In **Settings → File Manager**, leave **Folder picker = DevelopmentFiles** to 
 - **Updates / DLC:** open the content manager and its folder authorization action to browse this root, then select and confirm packages.
 - **Mods / cheats:** open the game's Mods page and its add-folder action. The importer accepts its existing `romfs`, `exefs` and `cheats/<build-id>.txt` layouts; installed cheats appear in the Cheats page. Loose cheat lists must be placed in that layout.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:637819d5ba917e18415c09e25885268a0c5772f179de39beecd8decb80ad6fd3 -->
+
 Create the root and your own subfolders through Xbox Device Portal. UWP permissions still apply: an access error is shown instead of claiming access was granted. The Network importer remains available if the console denies this path. At most 2048 child folders are shown per directory; split unusually large collections into subfolders.
+
+If access is denied, choose **Choose accessible folder** in the browser. Where the system picker is available, its selected folder becomes the browser root and is remembered through FutureAccessList. Child and parent navigation retain the authorized StorageFolder objects. Parent navigation stops at that selected root. Picker cancellation or failure leaves the browser open; cancel it and use Network import if the console provides no picker. This does not bypass Xbox filesystem permissions. Microsoft documents that [broadFileSystemAccess is not supported on Xbox](https://learn.microsoft.com/en-us/windows/uwp/files/file-access-permissions).
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 
