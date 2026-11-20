@@ -116,22 +116,26 @@ An override file only needs changed values. Blank lines and lines starting with 
 use exact `key=value` syntax. Invalid assignments preserve the inherited value and are logged.
 Homebrew with no title ID uses `0000000000000000.cfg`.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d25c213af1fbba524e4faf236ea6ad3dbcc785e319d5358ac9dfc80c5a878bd5 -->
+
+<!-- coderabbit-ai-generated-section:v1:81bfbfd37e4fc2f5a442912fc12d27c3778287ec2e978d40d41bbe306fc9f1e3 -->
+
 ```ini
 # Example per-game profile; create the optimization directory if absent.
 jit_cache_mib=32
 upload_ring_mib=64
 shader_cache_mib=0
 shader_eviction=2
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:81bfbfd37e4fc2f5a442912fc12d27c3778287ec2e978d40d41bbe306fc9f1e3 -->
-
 redundant_binds=1
 graphics_docked=0
 graphics_fsr1=1
 graphics_rcas=25
 graphics_aspect=0
 ```
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Graphics config keys: `graphics_docked` and `graphics_fsr1` accept 0/1; `graphics_rcas` accepts 0–200 stops ×100 (0 sharpest); `graphics_aspect` is 0=16:9, 1=4:3, 2=21:9, 3=16:10, 4=stretch. They work in boot.cfg and per-title profiles. The legacy `upscaling=` boot override still takes precedence over graphics filter/sharpness; remove it to let profiles control these. The in-game upscaling menu continues to change the global preference.
 

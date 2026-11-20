@@ -46,7 +46,13 @@ Use it for game folders, keys and firmware imports, update/DLC authorization and
 
 ## Selected upstream fixes
 
-Includes [selected JADYX 0.4.3.0 backports](jadyx-selected-backports.md): retirement-driven PSO index cleanup and the applicable derived-texture alignment fix. This is a selective backport build, not a full JADYX version upgrade. Credits and exact upstream revisions are recorded in the linked notes.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8b645629ec2a066626942ef72d802edc3a10f41bc2e03d8f50f2828a4b530a5e -->
+
+Includes [selected JADYX 0.4.3.0 backports](https://github.com/anonyguyidk/Eden-uwp-test/blob/49c99ade7cac7103d14604563a2b61d2996c6bf8/docs/xbox/jadyx-selected-backports.md): retirement-driven PSO index cleanup and the applicable derived-texture alignment fix. This is a selective backport build, not a full JADYX version upgrade. Credits and exact upstream revisions are recorded in the linked notes.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Memory controls
 
