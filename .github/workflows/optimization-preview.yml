@@ -20,8 +20,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: Check boot optimization parsing
-        run: python3 tools/xbox/tests/boot-optimization-integration.py
+      - name: Check frontend settings before the Windows build
+        run: |
+          python3 tools/xbox/tests/boot-optimization-integration.py
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Isrc tools/xbox/tests/graphics-profile.cpp src/jadyx/i18n/localization.cpp src/jadyx/i18n/locales/*.cpp -o /tmp/graphics-profile
+          /tmp/graphics-profile
+          g++ -std=c++20 -O2 -Isrc tools/xbox/tests/system-settings.cpp src/jadyx/i18n/localization.cpp src/jadyx/i18n/locales/*.cpp -o /tmp/system-settings
+          /tmp/system-settings
+          g++ -std=c++20 -O2 -Isrc tools/xbox/tests/mods-page.cpp -o /tmp/mods-page
+          /tmp/mods-page
+          g++ -std=c++20 -O2 -Isrc tools/xbox/tests/cheats-page.cpp src/core/memory/cheat_text.cpp -o /tmp/cheats-page
+          /tmp/cheats-page
 
   build:
     needs: preflight

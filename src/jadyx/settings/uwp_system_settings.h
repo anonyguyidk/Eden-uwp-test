@@ -11,6 +11,10 @@ namespace Jadyx {
 /// Saved in the app's LocalSettings, like the controller options.
 SystemSettings LoadSystemSettings();
 bool SaveSystemSettings(const SystemSettings& settings);
+void ApplyGraphicsSettings(const GraphicsSettings& settings);
+// The same partial profiles boot reads, under LocalState/optimization/<title id>.cfg.
+bool LoadTitleSettings(std::uint64_t title, SystemSettings& settings);
+bool SaveTitleSetting(std::uint64_t title, std::string_view assignment);
 
 /// Windows' preferred languages and home region (the console's, on Xbox). Never throws.
 SystemLocale DetectSystemLocale();

@@ -8,6 +8,7 @@
 #include <vector>
 #include <winrt/Windows.Storage.h>
 #include "jadyx/storage/network_portal.h"
+#include "jadyx/storage/development_folder_browser.h"
 #include "jadyx/storage/system_import.h"
 #include <mutex>
 
@@ -19,6 +20,8 @@ struct FileSetupStatus {
     std::vector<GameFolderSource> sources;
 };
 struct ConfigurationPanel {
+    DevelopmentFolderBrowser browser;
+    bool development_picker{true};
     bool open{};
     bool files{};
     bool busy{};
@@ -36,8 +39,8 @@ struct ConfigurationPanel {
     std::wstring review_text;
 };
 /// Rows of the settings home, in order.
-enum ConfigurationHomeRow : size_t { HomeSystem, HomeControllers, HomeFiles, HomeRowCount };
-enum FileManagerNetworkRow : size_t { FilesNetwork = 5, FilesNetworkAddress, FilesNetworkCode, FilesSources };
+enum ConfigurationHomeRow : size_t { HomeSystem, HomeControllers, HomeFiles, HomeGraphics, HomeRowCount };
+enum FileManagerNetworkRow : size_t { FilesPicker = 5, FilesNetwork, FilesNetworkAddress, FilesNetworkCode, FilesSources };
 inline size_t ConfigurationRowCount(const ConfigurationPanel& panel) {
     return panel.files ? FilesSources + panel.status.sources.size() : HomeRowCount;
 }

@@ -7,6 +7,7 @@
 // draws from the same state and the layout below, which pointer hit tests share.
 
 #include <optional>
+#include <sstream>
 #include "jadyx/updates/updater.h"
 #include <string>
 
@@ -18,7 +19,7 @@
 namespace Jadyx {
 
 struct SystemPage {
-    enum Row : std::size_t { UserName, InterfaceLanguage, GameLanguage, Region, AdultMods, PerformanceStats, PulseSessions, PlayTime, ShaderShare, JitCache, UploadRing, ShaderCache, ShaderEviction, AstcMipDrop, SoftwareTlb, DiskBytecode, RedundantBinds, ClearCache, Updates, RowCount };
+    enum Row : std::size_t { UserName, InterfaceLanguage, GameLanguage, Region, AdultMods, PerformanceStats, PulseSessions, PlayTime, ShaderShare, JitCache, UploadRing, ShaderCache, ShaderEviction, AstcMipDrop, SoftwareTlb, DiskBytecode, RedundantBinds, ClearCache, Updates, RowCount, GraphicsScope, ConsoleMode, ScalingFilter, Sharpness, AspectRatio, InternalResolution, ResetGraphics };
     /// What the text editor is changing.
     enum class Editing : std::uint8_t { Name, ShaderShareUrl };
 
@@ -26,6 +27,10 @@ struct SystemPage {
     std::size_t update_row{}, update_detail{}, update_scroll{};
     Updates::Snapshot update;
     bool updated{}; ///< This launch confirmed a new version: shown until the next input.
+    bool graphics{};
+    bool per_game{};
+    std::uint64_t graphics_title{};
+    std::wstring graphics_game;
     bool open{};
     std::size_t selected{};
     SystemSettings settings; ///< As saved.
@@ -43,6 +48,7 @@ enum class SystemPageEffect : std::uint8_t {
     NameDone,   ///< The editor closed with a new name in settings: save and apply.
     OpenUpdates,
     ClearCache, ///< Clear the library cache.
+    GraphicsScope, ResetGraphics,
 };
 
 enum class SystemInput : std::uint8_t { Up, Down, Left, Right, Confirm, Back };
@@ -59,15 +65,49 @@ inline std::optional<std::wstring> StepUiLanguage(const std::wstring& current, b
 }
 } // namespace SystemPageDetail
 
+inline std::span<const SystemPage::Row> GraphicsRows() {
+    static constexpr std::array rows{SystemPage::GraphicsScope, SystemPage::ConsoleMode,
+        SystemPage::ScalingFilter, SystemPage::Sharpness, SystemPage::AspectRatio,
+        SystemPage::InternalResolution, SystemPage::UploadRing, SystemPage::ShaderCache,
+        SystemPage::ShaderEviction, SystemPage::AstcMipDrop, SystemPage::DiskBytecode,
+        SystemPage::RedundantBinds, SystemPage::JitCache, SystemPage::SoftwareTlb, SystemPage::ResetGraphics};
+    return rows;
+}
+inline SystemPage::Row SelectedSystemRow(const SystemPage& page) {
+    return page.graphics ? GraphicsRows()[page.selected % GraphicsRows().size()] : static_cast<SystemPage::Row>(page.selected);
+}
+inline std::string SystemSettingAssignment(const SystemPage& page) {
+    std::string_view key;
+    switch (SelectedSystemRow(page)) {
+    case SystemPage::ConsoleMode: key = "graphics_docked="; break;
+    case SystemPage::ScalingFilter: key = "graphics_fsr1="; break;
+    case SystemPage::Sharpness: key = "graphics_rcas="; break;
+    case SystemPage::AspectRatio: key = "graphics_aspect="; break;
+    case SystemPage::UploadRing: key = "upload_ring_mib="; break;
+    case SystemPage::ShaderCache: key = "shader_cache_mib="; break;
+    case SystemPage::ShaderEviction: key = "shader_eviction="; break;
+    case SystemPage::AstcMipDrop: key = "astc_mip_drop="; break;
+    case SystemPage::DiskBytecode: key = "shader_bytecode_policy="; break;
+    case SystemPage::RedundantBinds: key = "redundant_binds="; break;
+    case SystemPage::JitCache: key = "jit_cache_mib="; break;
+    case SystemPage::SoftwareTlb: key = "software_tlb_entries="; break;
+    default: return {};
+    }
+    std::istringstream input{page.settings.optimization.Serialize() + page.settings.graphics.Serialize()};
+    for (std::string line; std::getline(input, line);) if (line.starts_with(key)) return line;
+    return {};
+}
+
 /// Applies one input to the page (not to the name editor, which the library drives directly).
 inline SystemPageEffect HandleSystemInput(SystemPage& page, SystemInput input) {
     using Row = SystemPage::Row;
+    const auto count = page.graphics ? GraphicsRows().size() : static_cast<size_t>(Row::RowCount);
     switch (input) {
     case SystemInput::Up:
-        page.selected = (page.selected + Row::RowCount - 1) % Row::RowCount;
+        page.selected = (page.selected + count - 1) % count;
         return SystemPageEffect::None;
     case SystemInput::Down:
-        page.selected = (page.selected + 1) % Row::RowCount;
+        page.selected = (page.selected + 1) % count;
         return SystemPageEffect::None;
     case SystemInput::Back:
         page.open = false;
@@ -79,7 +119,23 @@ inline SystemPageEffect HandleSystemInput(SystemPage& page, SystemInput input) {
     }
     const bool back = input == SystemInput::Left;
     auto& settings = page.settings;
-    switch (static_cast<Row>(page.selected)) {
+    switch (SelectedSystemRow(page)) {
+    case Row::GraphicsScope:
+        if (!page.graphics_title) return SystemPageEffect::None;
+        page.per_game = !page.per_game;
+        return SystemPageEffect::GraphicsScope;
+    case Row::ResetGraphics:
+        return input == SystemInput::Confirm && page.per_game ? SystemPageEffect::ResetGraphics : SystemPageEffect::None;
+    case Row::InternalResolution: return SystemPageEffect::None;
+    case Row::ConsoleMode: settings.graphics.docked = !settings.graphics.docked; return SystemPageEffect::Changed;
+    case Row::ScalingFilter: settings.graphics.fsr = !settings.graphics.fsr; return SystemPageEffect::Changed;
+    case Row::Sharpness:
+        settings.graphics.sharpness = back ? std::min(200u, settings.graphics.sharpness + 5) :
+            (settings.graphics.sharpness >= 5 ? settings.graphics.sharpness - 5 : 0);
+        return SystemPageEffect::Changed;
+    case Row::AspectRatio:
+        settings.graphics.aspect_ratio = (settings.graphics.aspect_ratio + (back ? 4 : 1)) % 5;
+        return SystemPageEffect::Changed;
     case Row::JitCache:
         settings.optimization.jit_cache_mib = settings.optimization.jit_cache_mib == 32 ? 48 : 32;
         return SystemPageEffect::Changed;
@@ -221,6 +277,16 @@ inline std::wstring SystemRowValue(const SystemPage& page, SystemPage::Row row) 
         return I18n::Format(Text::AutomaticValue, {value});
     };
     switch (row) {
+    case SystemPage::GraphicsScope: return page.per_game ? page.graphics_game : L"Global defaults";
+    case SystemPage::ConsoleMode: return settings.graphics.docked ? L"Docked" : L"Handheld";
+    case SystemPage::ScalingFilter: return settings.graphics.fsr ? L"AMD FSR 1" : L"Bilinear";
+    case SystemPage::Sharpness: return std::to_wstring((200 - settings.graphics.sharpness) / 2) + (settings.graphics.sharpness % 2 ? L".5%" : L"%");
+    case SystemPage::AspectRatio: {
+        static constexpr std::array names{L"16:9", L"4:3", L"21:9", L"16:10", L"Stretch"};
+        return names[settings.graphics.aspect_ratio];
+    }
+    case SystemPage::InternalResolution: return L"Native (D3D12)";
+    case SystemPage::ResetGraphics: return page.per_game ? L"Reset overrides" : L"Select a game profile first";
     case SystemPage::JitCache: return std::to_wstring(settings.optimization.jit_cache_mib) + L" MiB/core";
     case SystemPage::UploadRing: return std::to_wstring(settings.optimization.upload_ring_mib) + L" MiB";
     case SystemPage::ShaderCache: return std::to_wstring(settings.optimization.shader_cache_mib) + L" MiB";

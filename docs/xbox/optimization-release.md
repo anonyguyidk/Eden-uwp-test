@@ -18,7 +18,31 @@ This build retains the inherited application identity. Back up before installing
 
 ## Tune your game
 
-Open **Settings → System**. Changes apply on the next game launch.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:8e825417f217aefc7977746777325deff4b8cc058dd6664fd6672e05111bfeef -->
+
+Open **Settings → Graphics** for FSR 1, its sharpness slider, handheld/docked mode, aspect ratio and memory controls. **Game Options → Graphics** opens the selected game's overrides. The Profile row switches between global defaults and that game; **Inherit global defaults** resets the game's overrides. Changes apply on the next game launch.
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:737720bdf9f41d80346f6cbcc2a7c41e076492a69050b65961c1f2d6bdbd304c -->
+
+**Internal resolution scaling and FSR 3 are deferred.** D3D12 renders at the game's native resolution. Handheld mode often requests a lower resolution, depending on the game. FSR 1 sharpens/upscales only when the source is smaller than the screen.
+
+For console-mode changes, start the game from a cold boot: discard its kept Pulse session through Game Options first. Settings changes never automatically delete a kept session or normal saves.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+## Xbox folder browser
+
+**Settings → File Manager → Folder picker = DevelopmentFiles** selects the in-app `D:\DevelopmentFiles\` browser. A/Enter opens folders or selects **Use this folder**; Left goes up; B/Escape cancels. The choice persists; the Windows picker remains available.
+
+Use it for game folders, keys and firmware imports, update/DLC authorization and the game's Mods add-folder action. Supported mod layouts include `cheats/<build-id>.txt`, so cheat packs can be imported through Mods. Existing validation and install confirmation remain in effect. Create your folders through Xbox Device Portal; access is subject to the console's UWP permissions. If denied, use Network import. Directories show at most 2048 child folders.
+
+## Memory controls
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 | Control | Available choices | Default |
 | --- | --- | --- |

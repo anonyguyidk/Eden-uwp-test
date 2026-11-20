@@ -19,12 +19,12 @@ namespace Jadyx {
 
 /// Pulse's pane shows the kept session and Remove's what deleting the game takes with it. Both
 /// act in place and only on a second confirmation.
-enum class GameOption : std::uint8_t { Cheats, Mods, Updates, Dlc, Pulse, Remove };
+enum class GameOption : std::uint8_t { Cheats, Mods, Updates, Dlc, Pulse, Remove, Graphics };
 
 /// The options shown, in order.
 inline std::span<const GameOption> GameOptions() {
     static constexpr std::array options{GameOption::Mods, GameOption::Cheats, GameOption::Updates,
-                                        GameOption::Dlc, GameOption::Pulse, GameOption::Remove};
+                                        GameOption::Dlc, GameOption::Pulse, GameOption::Remove, GameOption::Graphics};
     return options;
 }
 
@@ -35,6 +35,7 @@ inline bool GameOptionHasManager(GameOption option) {
 
 inline I18n::Text GameOptionTitle(GameOption option) {
     switch (option) {
+    case GameOption::Graphics: return I18n::Text::CheatsCategoryGraphics;
     case GameOption::Updates: return I18n::Text::ContentUpdates;
     case GameOption::Dlc: return I18n::Text::ContentDlc;
     case GameOption::Cheats: return I18n::Text::CheatsTitle;
@@ -47,6 +48,7 @@ inline I18n::Text GameOptionTitle(GameOption option) {
 
 inline I18n::Text GameOptionHint(GameOption option) {
     switch (option) {
+    case GameOption::Graphics: return I18n::Text::MenuDisplay;
     case GameOption::Updates:
     case GameOption::Dlc: return I18n::Text::ContentCategoryHint;
     case GameOption::Cheats: return I18n::Text::CheatsHint;
@@ -59,6 +61,7 @@ inline I18n::Text GameOptionHint(GameOption option) {
 
 inline UiIcon GameOptionIcon(GameOption option) {
     switch (option) {
+    case GameOption::Graphics: return UiIcon::Settings;
     case GameOption::Updates:
     case GameOption::Dlc: return UiIcon::Folder;
     case GameOption::Cheats: return UiIcon::Cheats;

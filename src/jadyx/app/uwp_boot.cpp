@@ -425,7 +425,10 @@ constexpr u32 DEFAULT_GAME_RUN_SECONDS = 120;
 int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
                     const BootConfig& config) {
     auto optimization = LoadSystemSettings().optimization;
-    for (const auto& line : config.optimization_overrides) optimization.Apply(line);
+    auto graphics = LoadSystemSettings().graphics;
+    for (const auto& line : config.optimization_overrides) {
+        if (!optimization.Apply(line)) graphics.Apply(line);
+    }
     if (!config.log_filter.empty()) {
         Settings::values.log_filter = config.log_filter;
     }
@@ -680,9 +683,12 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
         std::ifstream profile{local / "optimization" / (fmt::format("{:016x}", content.application) + ".cfg")};
         for (std::string line; std::getline(profile, line);) {
             if (!line.empty() && line.back() == '\r') line.pop_back();
-            if (!line.empty() && line.front() != '#' && !optimization.Apply(line))
+            if (!line.empty() && line.front() != '#' && !optimization.Apply(line) && !graphics.Apply(line))
                 WriteDiag("optimization profile: invalid setting ignored: " + line);
         }
+        ApplyGraphicsSettings(graphics);
+        emu_window.UpdateCurrentFramebufferLayout(surface.width, surface.height);
+        if (config.upscaling) ApplyUpscaling(*config.upscaling);
         Core::SetJitCodeCacheSize(optimization.jit_cache_mib << 20);
         D3D12::SetUploadRingSize(optimization.upload_ring_mib);
         D3D12::SetAstcMipDrop(optimization.astc_mip_drop);
@@ -1355,6 +1361,9 @@ int RunHeadlessBoot(const std::string& nro_path, const BootSurface& surface,
                     const Upscaling upscaling = menu->Settings().upscaling;
                     auto settings = LoadSystemSettings();
                     settings.upscaling = upscaling;
+                    const auto values = ToSettings(upscaling);
+                    settings.graphics.fsr = values.filter == Settings::ScalingFilter::Fsr;
+                    settings.graphics.sharpness = values.fsr_sharpening_slider;
                     if (!SaveSystemSettings(settings)) WriteDiag("menu: upscaling preference could not be saved");
                     // Written where the present reads it; draw_menu below presents the paused
                     // frame again with it.
@@ -2759,9 +2768,10 @@ struct BootView : implements<BootView, IFrameworkViewSource, IFrameworkView> {
                         } else if (line.starts_with("jit_cache_mib=") || line.starts_with("upload_ring_mib=") ||
                                    line.starts_with("shader_cache_mib=") || line.starts_with("shader_eviction=") ||
                                    line.starts_with("redundant_binds=") || line.starts_with("shader_bytecode_policy=") || line.starts_with("software_tlb_entries=") || line.starts_with("astc_mip_drop=") ||
-                                   line.starts_with("astc_mip0=")) {
+                                   line.starts_with("astc_mip0=") || line.starts_with("graphics_")) {
                             Jadyx::OptimizationSettings checked;
-                            if (checked.Apply(line)) config.optimization_overrides.push_back(line);
+                            Jadyx::GraphicsSettings graphics;
+                            if (checked.Apply(line) || graphics.Apply(line)) config.optimization_overrides.push_back(line);
                             else WriteDiag("boot.cfg: invalid optimization setting ignored: " + line);
                         } else if (line == "readback_uncached=1" || line == "readback_uncached=0") {
                             config.readback_uncached = line.back() == '1';

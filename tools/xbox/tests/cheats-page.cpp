@@ -140,7 +140,8 @@ int main() {
 
     // Pulse still requires two confirms; changing category cancels it.
     options = {true, 7};
-    HandleGameOptionsInput(options, GameOptionsInput::Up);
+    const auto choices = GameOptions();
+    SelectGameOption(options, static_cast<size_t>(std::find(choices.begin(), choices.end(), GameOption::Pulse) - choices.begin()));
     check(GameOptions()[options.selected] == GameOption::Pulse);
     HandleGameOptionsInput(options, GameOptionsInput::Confirm);
     check(options.confirm_discard && !options.discard);
@@ -153,9 +154,9 @@ int main() {
 
     for (std::size_t i = 0; i < GameOptions().size(); ++i) {
         SelectGameOption(options, i);
-        check(options.selected == i && options.activate && (options.focus == GameOptionsFocus::Sections));
+        check(options.selected == i && options.activate && (options.focus == GameOptionsFocus::Content));
         check(!options.discard && !options.confirm_discard);
-        check(GameOptions()[i] == GameOption::Pulse ? !options.page : options.page == GameOptions()[i]);
+        check((GameOptions()[i] == GameOption::Pulse || GameOptions()[i] == GameOption::Remove) ? !options.page : options.page == GameOptions()[i]);
     }
     SelectGameOption(options, GameOptions().size());
     check(options.selected == GameOptions().size() - 1); // invalid pointer index is ignored

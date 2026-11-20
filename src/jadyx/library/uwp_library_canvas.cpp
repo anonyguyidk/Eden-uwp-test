@@ -204,6 +204,29 @@ public:
         }
         if (!view.game_options.game) management_collapse.Snap(0);
         if (view.missing_content) Content::DrawMissingContent(*this);
+        if (configuration.browser.open) {
+            hits.clear();
+            Round(0, 0, 1280, 720, 0, Palette::Canvas);
+            const auto& browser = configuration.browser;
+            Type(L"DevelopmentFiles folder browser", TypeRole::HeadlineLarge, 80, 50, 1120, Palette::Text);
+            Type(browser.path.empty() ? DevelopmentFolderBrowser::Root : browser.path,
+                 TypeRole::Body, 80, 112, 1120, Palette::TextSecondary);
+            const size_t first = browser.selected >= 8 ? browser.selected - 7 : 0;
+            for (size_t i = first; i < std::min(browser.RowCount(), first + 8); ++i) {
+                const float y = 170 + static_cast<float>(i - first) * 48;
+                const bool focused = i == browser.selected;
+                Round(80, y, 1120, 44, 10, focused ? Palette::RowActive : Palette::Surface);
+                const std::wstring label = i == DevelopmentFolderBrowser::UseFolder ? L"Use this folder" :
+                    i == DevelopmentFolderBrowser::Parent ? L"Parent folder" :
+                    i == DevelopmentFolderBrowser::Cancel ? L"Cancel" :
+                    browser.folders[i - DevelopmentFolderBrowser::FirstFolder];
+                Type(label, TypeRole::LabelLarge, 100, y + 10, 1080, focused ? Palette::Text : Palette::TextSecondary);
+                AddHit(80, y, 1120, 44, LibraryHit::FolderBrowserRow, i);
+            }
+            Type(browser.busy ? L"Reading folders..." : browser.notice, TypeRole::Body, 80, 566, 1120, Palette::Warning, 1, TextAlign::Leading, 3);
+            Type(L"A: open/select   B: cancel   Left: parent. Imports keep their validation and confirmation.",
+                 TypeRole::Label, 80, 676, 1120, Palette::TextHint);
+        }
         // A text whose fallback font the system cannot read (0x8007067D, now and then on the
         // console) fails the frame, not the library: the next frame draws again.
         if (const HRESULT drawn = target->EndDraw(); FAILED(drawn)) {
@@ -1097,16 +1120,17 @@ private:
     using ConfigurationIcon = UiIcon;
     /// One row of a settings category, as the right side of the Settings tab shows it.
     struct SettingsRow {
-        enum class Kind { Open, Choice, Toggle, Segments, Value } kind{};
+        enum class Kind { Open, Choice, Toggle, Segments, Value, Slider } kind{};
         std::wstring title, hint, value;
         bool on{};                          ///< Toggle.
         std::vector<std::wstring> segments; ///< Segments, with `on_segment` the chosen one.
         std::size_t on_segment{};
+        float slider{};
         bool warning{};                     ///< The value needs the player's attention.
     };
     /// The category the Settings tab shows: the open one, or the focused one in the list.
     static std::size_t SettingsCategory(const LibraryView& view) {
-        if (view.system.open) return HomeSystem;
+        if (view.system.open) return view.system.graphics ? HomeGraphics : HomeSystem;
         if (view.configuration.files) return HomeFiles;
         if (view.controller_panel) return HomeControllers;
         return std::min<std::size_t>(view.configuration.selected, HomeRowCount - 1);
@@ -1114,13 +1138,23 @@ private:
     std::vector<SettingsRow> SettingsRows(const LibraryView& view, std::size_t category) {
         using Kind = SettingsRow::Kind;
         std::vector<SettingsRow> rows;
-        if (category == HomeSystem) {
-            for (std::size_t i = 0; i < SystemPage::RowCount; ++i) {
-                const auto row = static_cast<SystemPage::Row>(i);
+        if (category == HomeSystem || category == HomeGraphics) {
+            const auto count = category == HomeGraphics ? GraphicsRows().size() : static_cast<size_t>(SystemPage::RowCount);
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto row = category == HomeGraphics ? GraphicsRows()[i] : static_cast<SystemPage::Row>(i);
                 const auto& settings = view.system.settings;
                 SettingsRow item{Kind::Choice, std::wstring{Tr(SystemRowTitle(row))},
                                  std::wstring{Tr(SystemRowHint(row))}, SystemRowValue(view.system, row)};
                 switch (row) {
+                case SystemPage::GraphicsScope: item.title = L"Profile"; item.hint = L"Global defaults or the selected game. Choose a game in Library or Options > Graphics."; break;
+                case SystemPage::ConsoleMode: item.title = L"Console mode"; item.hint = L"Handheld often requests a lower game resolution. Game dependent; next launch."; break;
+                case SystemPage::ScalingFilter: item.title = L"Upscaling filter"; item.hint = L"FSR 1 EASU + RCAS for images smaller than the screen. No frame generation."; break;
+                case SystemPage::Sharpness:
+                    item.title = L"FSR 1 sharpness"; item.hint = L"Left/right: adjust 2.5%. Higher is sharper; only applies to FSR 1.";
+                    item.kind = Kind::Slider; item.slider = 1.0f - settings.graphics.sharpness / 200.0f; break;
+                case SystemPage::AspectRatio: item.title = L"Aspect ratio"; item.hint = L"Presentation aspect ratio. Next launch."; break;
+                case SystemPage::InternalResolution: item.title = L"Internal resolution"; item.hint = L"D3D12 render-target scaling is not implemented. Use handheld mode for lower guest resolution."; item.kind = Kind::Value; break;
+                case SystemPage::ResetGraphics: item.title = L"Inherit global defaults"; item.hint = L"Remove this game's graphics and memory overrides. Other config lines are preserved."; item.kind = Kind::Open; break;
                 case SystemPage::JitCache: item.title = L"JIT cache per core"; item.hint = L"32-48 MiB. Applies on next launch."; break;
                 case SystemPage::UploadRing: item.title = L"Upload ring size"; item.hint = L"32 / 64 / 128 MiB. Applies on next launch."; break;
                 case SystemPage::ShaderCache: item.title = L"Linked shader cache"; item.hint = L"0-16 MiB memoization budget. Applies on next launch."; break;
@@ -1179,6 +1213,8 @@ private:
                             I18n::Format(T::FirmwareFiles, {std::to_wstring(status.firmware_files)})});
             rows.push_back({Kind::Open, std::wstring{Tr(T::ContentUpdates)}});
             rows.push_back({Kind::Open, std::wstring{Tr(T::ContentDlc)}});
+            rows.push_back({Kind::Choice, L"Folder picker", L"Xbox: browse D:\\DevelopmentFiles. Windows picker is also available.",
+                view.configuration.development_picker ? L"DevelopmentFiles" : L"Windows system picker"});
             const auto& network = view.configuration.network;
             rows.push_back({Kind::Open, std::wstring{Tr(T::NetworkConnection)},
                 network.running ? std::wstring{winrt::to_hstring(network.url)} : std::wstring{Tr(T::NetworkStopped)},
@@ -1365,8 +1401,8 @@ private:
         Type(L"Jadyx " + version_text, TypeRole::Label, Margin + kicker_width + 28, 92, 300, Palette::TextHint);
         // The categories.
         static constexpr std::array<ConfigurationIcon, HomeRowCount> icons{
-            ConfigurationIcon::Settings, ConfigurationIcon::Controller, ConfigurationIcon::Folder};
-        static constexpr std::array<T, HomeRowCount> titles{T::System, T::ControllersAndKeyboard, T::FileManager};
+            ConfigurationIcon::Settings, ConfigurationIcon::Controller, ConfigurationIcon::Folder, ConfigurationIcon::Settings};
+        static constexpr std::array<T, HomeRowCount> titles{T::System, T::ControllersAndKeyboard, T::FileManager, T::CheatsCategoryGraphics};
         for (std::size_t i = 0; i < HomeRowCount; ++i) {
             const float x = SettingsListX, y = SettingsListTop + i * SettingsListStride;
             const float w = SettingsListWidth, h = SettingsListHeight;
@@ -1381,6 +1417,8 @@ private:
             if (i == HomeSystem) {
                 summary = SystemRowValue(view.system, SystemPage::UserName) + L" · " +
                           SystemRowValue(view.system, SystemPage::InterfaceLanguage);
+            } else if (i == HomeGraphics) {
+                summary = L"FSR 1 / sharpness / per-game profiles";
             } else if (i == HomeControllers) {
                 const auto label = ControllerLabel(view.panel.devices, view.options.controller_id);
                 summary = view.options.controller_id.empty() ? I18n::Format(T::AutomaticValue, {label}) : label;
@@ -1420,15 +1458,15 @@ private:
                  x + w - 120, y + 140, 100, Palette::Text, 1, TextAlign::Trailing);
         }
         // The category's page.
-        static constexpr std::array<T, HomeRowCount> pages{T::SystemTitle, T::ControllersAndKeyboard, T::FileManager};
-        static constexpr std::array<T, HomeRowCount> about{T::SystemSubtitle, T::ControllerSubtitle, T::FilesSubtitle};
+        static constexpr std::array<T, HomeRowCount> pages{T::SystemTitle, T::ControllersAndKeyboard, T::FileManager, T::CheatsCategoryGraphics};
+        static constexpr std::array<T, HomeRowCount> about{T::SystemSubtitle, T::ControllerSubtitle, T::FilesSubtitle, T::MenuDisplay};
         const float px = SettingsPaneX, pw = SettingsPaneWidth;
         Type(Tr(pages[category]), TypeRole::HeadlineLarge, px, 122, pw, Palette::Text);
         Type(Tr(about[category]), TypeRole::Body, px, 176, pw, Palette::TextSecondary);
         const auto rows = SettingsRows(view, category);
         if (rows.empty()) return;
         const std::size_t selected = !in_pane ? SIZE_MAX :
-            category == HomeSystem ? view.system.selected :
+            (category == HomeSystem || category == HomeGraphics) ? view.system.selected :
             category == HomeFiles ? configuration.selected : view.controller_row;
         const std::size_t visible = std::min(rows.size(), SettingsVisibleRows);
         const std::size_t first = selected != SIZE_MAX && selected >= visible ? selected - visible + 1 : 0;
@@ -1454,6 +1492,14 @@ private:
         float right = x + w - 16;
         // The control at the right, drawn first: the texts take the room it leaves.
         switch (row.kind) {
+        case Kind::Slider: {
+            right -= 200;
+            Type(row.value, TypeRole::LabelLarge, right + 140, middle - 10, 60, Palette::Text, alpha);
+            Round(right, middle - 3, 124, 6, 3, Palette::Graphite);
+            Round(right, middle - 3, std::max(1.0f, 124 * row.slider), 6, 3, Palette::Accent);
+            Round(right + 116 * row.slider, middle - 8, 8, 16, 4, Palette::Text);
+            break;
+        }
         case Kind::Toggle:
             right -= 52;
             Switch(right, middle - 14, row.on, focused);

@@ -31,6 +31,7 @@
 #include <winrt/Windows.System.Profile.h>
 #include <winrt/Windows.Graphics.Display.h>
 #include <winrt/Windows.Storage.Pickers.h>
+#include <winrt/Windows.Storage.Search.h>
 #include "jadyx/cheats/cheat_session.h"
 #include "jadyx/cheats/cheats_page.h"
 #include "jadyx/library/game_library.h"
@@ -130,6 +131,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
     Mods::ModsPage mods_page;
     std::wstring options_notice;
     system_page.settings = LoadSystemSettings();
+    configuration.development_picker = system_page.settings.development_picker;
     system_page.locale = DetectSystemLocale();
     // Titles are read in the game language, so the library shows what the games will.
     Settings::Language title_language = ApplySystemSettings().game_language;
@@ -201,6 +203,52 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                       Options = 2048, PreviousTab = 4096, NextTab = 8192, Pin = 16384, PreviousManagerTab = 32768, NextManagerTab = 65536 };
     using winrt::Windows::Storage::StorageFolder;
     winrt::Windows::Foundation::IAsyncOperation<StorageFolder> picker{nullptr};
+    StorageFolder picked_folder{nullptr};
+    struct FolderListing {
+        StorageFolder folder{nullptr};
+        std::vector<StorageFolder> children;
+    };
+    std::future<FolderListing> folder_listing;
+    std::jthread folder_worker;
+    FolderListing browsed;
+    std::vector<StorageFolder> folder_parents;
+    bool folder_descending{}, folder_ascending{};
+    auto list_folder = [&](std::wstring path, bool descending) {
+        configuration.browser.busy = true;
+        configuration.browser.notice.clear();
+        folder_descending = descending;
+        std::packaged_task<FolderListing()> task{[path = std::move(path)] {
+            winrt::init_apartment(winrt::apartment_type::multi_threaded);
+            struct Uninitialize { ~Uninitialize() { winrt::uninit_apartment(); } } guard;
+            FolderListing result;
+            result.folder = StorageFolder::GetFolderFromPathAsync(path).get();
+            // A bounded batch avoids holding an unbounded external directory in memory.
+            const auto folders = result.folder.GetFoldersAsync(winrt::Windows::Storage::Search::CommonFolderQuery::DefaultQuery, 0, 2049).get();
+            for (const auto& child : folders) result.children.push_back(child);
+            std::sort(result.children.begin(), result.children.end(), [](const auto& a, const auto& b) {
+                return std::wstring{a.Name().c_str()} < std::wstring{b.Name().c_str()};
+            });
+            return result;
+        }};
+        folder_listing = task.get_future();
+        folder_worker = std::jthread(std::move(task));
+        dirty = true;
+    };
+    auto open_folder_picker = [&](unsigned kind) {
+        picker_kind = kind;
+        if (configuration.development_picker) {
+            browsed = {};
+            folder_parents.clear();
+            configuration.browser = {};
+            configuration.browser.open = true;
+            list_folder(DevelopmentFolderBrowser::Root, false);
+        } else {
+            winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
+            folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
+            folder_picker.FileTypeFilter().Append(L"*");
+            picker = folder_picker.PickSingleFolderAsync();
+        }
+    };
     std::future<std::string> validation;
     std::jthread validation_worker;
     std::string selected_path;
@@ -310,6 +358,15 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
         const auto scale = std::max(0.01f, std::min(width / 1280.0f, height / 720.0f));
         const float x = static_cast<float>((p.X * dpi - (width - 1280 * scale) / 2) / scale);
         const float y = static_cast<float>((p.Y * dpi - (height - 720 * scale) / 2) / scale);
+        if (configuration.browser.open) {
+            const auto hit = canvas->HitAt(x, y);
+            if (hit.hit == LibraryHit::FolderBrowserRow && hit.index < configuration.browser.RowCount()) {
+                configuration.browser.selected = hit.index;
+                actions |= Play;
+            }
+            e.Handled(true);
+            return;
+        }
         if (configuration.network_screen || configuration.confirm_import) {
             const auto hit = canvas->HitAt(x, y);
             if (hit.hit == LibraryHit::NetworkAction && hit.index < 3) {
@@ -412,7 +469,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
         if (configuration.open && !content_session && !panel.keyboard.open && !panel.expanded) {
             const auto target = canvas->HitAt(x, y);
             const bool in_page = system_page.open || configuration.files || settings;
-            const size_t shown = system_page.open ? HomeSystem : configuration.files ? HomeFiles :
+            const size_t shown = system_page.open ? (system_page.graphics ? HomeGraphics : HomeSystem) : configuration.files ? HomeFiles :
                                  settings ? HomeControllers : configuration.selected;
             auto category = target.hit == LibraryHit::Category ? std::optional<size_t>{target.index} :
                             target.hit == LibraryHit::Controller ? std::optional<size_t>{HomeControllers} :
@@ -727,9 +784,12 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
         switch (effect) {
         case SystemPageEffect::Changed:
         case SystemPageEffect::NameDone: {
-            const bool saved = SaveSystemSettings(system_page.settings);
+            const bool saved = system_page.graphics && system_page.per_game ?
+                SaveTitleSetting(system_page.graphics_title, SystemSettingAssignment(system_page)) : SaveSystemSettings(system_page.settings);
             const auto resolved = ApplySystemSettings();
-            system_page.notice = Tr(saved ? T::SettingsSaved : T::SystemSaveFailed);
+            system_page.notice = saved && system_page.graphics ?
+                L"Saved. For a cold launch, discard the kept Pulse session in Game Options first." :
+                std::wstring{Tr(saved ? T::SettingsSaved : T::SystemSaveFailed)};
             system_notice_until = saved ? now + std::chrono::seconds{3} : std::chrono::steady_clock::time_point::max();
             if (resolved.game_language != title_language) {
                 title_language = resolved.game_language;
@@ -737,6 +797,17 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
             }
             if (system_page.settings.track_play_time != play_order && !loading)
                 refresh_play(selected < scan.entries.size() ? scan.entries[selected].launch_path : std::string{});
+            break;
+        }
+        case SystemPageEffect::GraphicsScope:
+        case SystemPageEffect::ResetGraphics: {
+            bool saved = true;
+            if (effect == SystemPageEffect::ResetGraphics) saved = SaveTitleSetting(system_page.graphics_title, {});
+            system_page.settings = LoadSystemSettings();
+            if (system_page.per_game) saved &= LoadTitleSettings(system_page.graphics_title, system_page.settings);
+            system_page.notice = saved ? L"Changes apply on the next game launch. Reset overrides to inherit global defaults." :
+                                         L"Could not read or save the game profile.";
+            system_notice_until = now + std::chrono::seconds{6};
             break;
         }
         case SystemPageEffect::OpenUpdates:
@@ -1158,11 +1229,60 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
             finish_name_editor.reset();
             dirty = true;
         }
-        if (picker) {
-            actions = 0; // The system picker owns input until it returns.
-            if (picker.Status() != winrt::Windows::Foundation::AsyncStatus::Started) {
+        if (configuration.browser.open) {
+            auto& browser = configuration.browser;
+            if (folder_listing.valid() && folder_listing.wait_for(std::chrono::seconds{0}) == std::future_status::ready) {
                 try {
-                    auto folder = picker.GetResults();
+                    auto listing = folder_listing.get();
+                    if (folder_descending && browsed.folder) folder_parents.push_back(browsed.folder);
+                    if (folder_ascending && !folder_parents.empty()) folder_parents.pop_back();
+                    browsed = std::move(listing);
+                    browser.path = browsed.folder.Path().c_str();
+                    browser.folders.clear();
+                    if (browsed.children.size() > 2048) {
+                        browsed.children.resize(2048);
+                        browser.notice = L"Showing the first 2048 folders. Split large collections into subfolders.";
+                    }
+                    for (const auto& child : browsed.children) browser.folders.emplace_back(child.Name().c_str());
+                    browser.ready = true;
+                    browser.selected = 0;
+                } catch (const winrt::hresult_error& e) {
+                    browser.notice = L"Cannot open folder: " + std::wstring{e.message()} +
+                        L". Create D:\\DevelopmentFiles using Xbox Device Portal. If access is denied, use the Windows picker or Network import.";
+                } catch (...) { browser.notice = L"Cannot read this folder."; }
+                folder_ascending = false;
+                browser.busy = false;
+                dirty = true;
+            }
+            if (!browser.busy) {
+                if (actions & Up) browser.Move(true);
+                if (actions & Down) browser.Move(false);
+                if (actions & Quit || (actions & Play && browser.selected == DevelopmentFolderBrowser::Cancel)) {
+                    browser.open = false;
+                } else if (actions & Left || (actions & Play && browser.selected == DevelopmentFolderBrowser::Parent)) {
+                    if (!folder_parents.empty()) {
+                        const auto parent = folder_parents.back();
+                        folder_ascending = true;
+                        list_folder(parent.Path().c_str(), false);
+                    }
+                } else if (actions & Play && browser.ready) {
+                    if (browser.selected == DevelopmentFolderBrowser::UseFolder) {
+                        picked_folder = browsed.folder;
+                        browser.open = false;
+                    } else if (browser.selected >= DevelopmentFolderBrowser::FirstFolder) {
+                        list_folder(browsed.children[browser.selected - DevelopmentFolderBrowser::FirstFolder].Path().c_str(), true);
+                    }
+                }
+            }
+            dirty |= actions != 0;
+            actions = 0;
+            pressed_tab.reset();
+        }
+        if (picker || picked_folder) {
+            actions = 0; // The system picker owns input until it returns.
+            if (picked_folder || picker.Status() != winrt::Windows::Foundation::AsyncStatus::Started) {
+                try {
+                    auto folder = picked_folder ? std::exchange(picked_folder, StorageFolder{nullptr}) : picker.GetResults();
                     if (folder && picker_kind == 0) start_scan(folder);
                     else if (folder && picker_kind == 3 && content_session) content_session->AuthorizeFolder(folder);
                     else if (folder && picker_kind == 4 && mod_session) mod_session->AddFolder(folder);
@@ -1387,14 +1507,17 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 };
                 send(Up, SystemInput::Up);
                 send(Down, SystemInput::Down);
-                const bool opens = system_page.selected == SystemPage::UserName ||
-                                   system_page.selected == SystemPage::ShaderShare ||
-                                   system_page.selected == SystemPage::ClearCache || system_page.selected == SystemPage::Updates;
+                const auto row = SelectedSystemRow(system_page);
+                const bool opens = row == SystemPage::UserName || row == SystemPage::ShaderShare ||
+                                   row == SystemPage::ClearCache || row == SystemPage::Updates;
                 send(Left, opens ? SystemInput::Back : SystemInput::Left);
                 send(Right, SystemInput::Right);
                 send(Play, SystemInput::Confirm);
                 send(Quit, SystemInput::Back);
-                if (!system_page.open) configuration.selected = HomeSystem;
+                if (!system_page.open) {
+                    configuration.selected = system_page.graphics ? HomeGraphics : HomeSystem;
+                    system_page.settings = LoadSystemSettings();
+                }
             }
             actions = 0;
         }
@@ -1505,6 +1628,28 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 game_options.activate = false;
                 game_options.page = GameOptionHasManager(GameOptions()[game_options.selected]) ?
                     std::optional{GameOptions()[game_options.selected]} : std::nullopt;
+                if (game_options.page == GameOption::Graphics) {
+                    const auto& game = scan.entries[game_options.game];
+                    system_page.graphics_title = FileSys::GetBaseTitleID(game.program_id);
+                    if (!system_page.graphics_title) {
+                        notify(T::CheatsUnavailable);
+                        game_options.page.reset();
+                    } else {
+                        system_page.graphics_game = game.name;
+                        system_page.graphics = system_page.per_game = system_page.open = true;
+                        system_page.selected = 0;
+                        system_page.settings = LoadSystemSettings();
+                        const bool loaded = LoadTitleSettings(system_page.graphics_title, system_page.settings);
+                        system_page.notice = loaded ? L"Per-game overrides. Changes apply on next launch." : L"Could not read this game profile.";
+                        game_options = {};
+                        mod_session.reset(); cheat_session.reset();
+                        configuration.open = true;
+                        configuration.files = false;
+                        configuration.selected = HomeGraphics;
+                        tab = LibraryTab::Settings;
+                        actions = 0;
+                    }
+                }
                 if (game_options.page == GameOption::Updates || game_options.page == GameOption::Dlc) {
                     const auto& game = scan.entries[game_options.game];
                     if (!game.title_loaded || !game.program_id) {
@@ -1580,10 +1725,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 send(Quit, Content::Input::Back);
                 if (content_session && content_session->TakeAuthorizeRequest() && !picker) {
                     try {
-                        winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
-                        folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
-                        folder_picker.FileTypeFilter().Append(L"*"); picker_kind = 3;
-                        picker = folder_picker.PickSingleFolderAsync();
+                        open_folder_picker(3);
                     } catch (...) { options_notice = Tr(T::PickerOpenFailed); }
                 }
                 dirty |= actions != 0;
@@ -1706,11 +1848,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 send(Quit, Mods::ModsInput::Back);
                 if (mod_session && mod_session->TakeFolderRequest() && !picker) {
                     try {
-                        winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
-                        folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
-                        folder_picker.FileTypeFilter().Append(L"*");
-                        picker_kind = 4;
-                        picker = folder_picker.PickSingleFolderAsync();
+                        open_folder_picker(4);
                     } catch (...) { options_notice = Tr(T::PickerOpenFailed); }
                 }
                 dirty |= actions != 0;
@@ -1841,7 +1979,13 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                     switch (configuration.selected) {
                     case HomeFiles: configuration.files = true; configuration.selected = 0; break;
                     case HomeControllers: settings = true; return_to_configuration = true; setting_row = 0; break;
+                    case HomeGraphics:
                     default:
+                        system_page.graphics = configuration.selected == HomeGraphics;
+                        system_page.per_game = false;
+                        system_page.settings = LoadSystemSettings();
+                        system_page.graphics_title = selected < scan.entries.size() ? FileSys::GetBaseTitleID(scan.entries[selected].program_id) : 0;
+                        system_page.graphics_game = selected < scan.entries.size() ? scan.entries[selected].name : std::wstring{};
                         system_page.open = true;
                         system_page.selected = SystemPage::UserName;
                         system_page.notice.clear();
@@ -1862,6 +2006,13 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                         std::move(bases), std::move(metadata_worker));
                     metadata = {}; game_options.open = true; game_options.game = 0;
                     game_options.activate = false; game_options.focus = GameOptionsFocus::Content;
+                }
+                else if (configuration.selected == FilesPicker) {
+                    configuration.development_picker = !configuration.development_picker;
+                    auto saved = LoadSystemSettings();
+                    saved.development_picker = configuration.development_picker;
+                    if (!SaveSystemSettings(saved)) configuration.notice = Tr(T::SystemSaveFailed);
+                    system_page.settings.development_picker = configuration.development_picker;
                 }
                 else if (configuration.selected == FilesNetwork) {
                     if (network_portal.Status().running) {
@@ -1902,10 +2053,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 } else {
                     picker_kind = static_cast<unsigned>(configuration.selected);
                     try {
-                        winrt::Windows::Storage::Pickers::FolderPicker folder_picker;
-                        folder_picker.SuggestedStartLocation(winrt::Windows::Storage::Pickers::PickerLocationId::ComputerFolder);
-                        folder_picker.FileTypeFilter().Append(L"*");
-                        picker = folder_picker.PickSingleFolderAsync();
+                        open_folder_picker(picker_kind);
                         configuration.notice = Tr(picker_kind == 0 ? T::PickGamesFolder :
                                                   picker_kind == 1 ? T::PickKeysFolder : T::PickFirmwareFolder);
                     } catch (...) { configuration.notice = Tr(T::PickerOpenFailed); }

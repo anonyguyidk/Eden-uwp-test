@@ -18,6 +18,7 @@ program = r'''
 #include <string>
 #include <vector>
 #include "jadyx/settings/optimization_settings.h"
+#include "jadyx/settings/graphics_settings.h"
 struct Config { std::vector<std::string> optimization_overrides; };
 void WriteDiag(const std::string&) {}
 bool Parse(const std::string& line, Config& config) {
@@ -35,6 +36,14 @@ int main() {
     assert(config.optimization_overrides.size() == 4);
     assert(Parse("jit_cache_mib=31", config));
     assert(config.optimization_overrides.size() == 4);
+    assert(Parse("graphics_fsr1=1", config));
+    assert(Parse("graphics_rcas=200", config));
+    assert(Parse("graphics_docked=0", config));
+    assert(Parse("graphics_aspect=4", config));
+    assert(config.optimization_overrides.size() == 8);
+    assert(Parse("graphics_rcas=201", config));
+    assert(Parse("graphics_fsr3=1", config));
+    assert(config.optimization_overrides.size() == 8);
     assert(!Parse("unrelated=1", config));
 }
 '''.replace('BRANCH', branch.removeprefix('} '))

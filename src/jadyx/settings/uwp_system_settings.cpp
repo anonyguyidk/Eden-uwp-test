@@ -3,6 +3,10 @@
 #include "jadyx/settings/uwp_system_settings.h"
 
 #include <sstream>
+#include <filesystem>
+#include <fmt/format.h>
+#include "jadyx/settings/title_profile.h"
+#include "jadyx/updates/update_storage.h"
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Storage.h>
 #include <winrt/Windows.System.UserProfile.h>
@@ -45,6 +49,8 @@ SystemSettings LoadSystemSettings() {
     SystemSettings settings;
     try {
         const auto values = winrt::Windows::Storage::ApplicationData::Current().LocalSettings().Values();
+        if (values.HasKey(L"system_development_picker"))
+            settings.development_picker = winrt::unbox_value<bool>(values.Lookup(L"system_development_picker"));
         if (values.HasKey(UiLanguageKey)) {
             settings.ui_language = winrt::unbox_value<winrt::hstring>(values.Lookup(UiLanguageKey)).c_str();
             if (!I18n::FindUiLanguage(settings.ui_language)) settings.ui_language.clear();
@@ -65,6 +71,16 @@ SystemSettings LoadSystemSettings() {
         if (values.HasKey(UpscalingKey))
             settings.upscaling = UpscalingFromValue(winrt::unbox_value<int32_t>(values.Lookup(UpscalingKey)))
                                      .value_or(Upscaling::Bilinear);
+        // Preserve older in-game upscaling preferences on the first upgraded launch.
+        const auto legacy = ToSettings(settings.upscaling);
+        settings.graphics.fsr = legacy.filter == Settings::ScalingFilter::Fsr;
+        settings.graphics.sharpness = legacy.fsr_sharpening_slider;
+        if (values.HasKey(L"graphics_profile_v1")) {
+            std::istringstream profile{winrt::to_string(winrt::unbox_value<winrt::hstring>(values.Lookup(L"graphics_profile_v1")))};
+            for (std::string line; std::getline(profile, line);) settings.graphics.Apply(line);
+        }
+        settings.upscaling = FromSettings(settings.graphics.fsr ? Settings::ScalingFilter::Fsr : Settings::ScalingFilter::Bilinear,
+                                          settings.graphics.sharpness);
         if (values.HasKey(ShaderShareKey))
             settings.shader_share_url = winrt::unbox_value<winrt::hstring>(values.Lookup(ShaderShareKey)).c_str();
     } catch (...) { /* Missing or invalid values keep following the system. */ }
@@ -75,6 +91,8 @@ bool SaveSystemSettings(const SystemSettings& settings) {
     try {
         const auto values = winrt::Windows::Storage::ApplicationData::Current().LocalSettings().Values();
         values.Insert(L"optimization_profile_v1", winrt::box_value(winrt::to_hstring(settings.optimization.Serialize())));
+        values.Insert(L"graphics_profile_v1", winrt::box_value(winrt::to_hstring(settings.graphics.Serialize())));
+        values.Insert(L"system_development_picker", winrt::box_value(settings.development_picker));
         values.Insert(UiLanguageKey, winrt::box_value(winrt::hstring{settings.ui_language}));
         values.Insert(GameLanguageKey, winrt::box_value(ChoiceValue(settings.game_language)));
         values.Insert(RegionKey, winrt::box_value(ChoiceValue(settings.region)));
@@ -106,7 +124,7 @@ ResolvedSystem ApplySystemSettings() {
     const auto locale = DetectSystemLocale();
     const auto settings = LoadSystemSettings();
     VideoCore::performance_overlay_enabled.store(settings.show_performance_stats, std::memory_order_relaxed);
-    ApplyUpscaling(settings.upscaling);
+    ApplyGraphicsSettings(settings.graphics);
     const auto resolved = ResolveSystem(settings, locale);
     I18n::SetUiLanguage(*resolved.ui_language);
     Settings::values.language_index = resolved.game_language;
@@ -119,6 +137,45 @@ ResolvedSystem ApplySystemSettings() {
              I18n::ToUtf8(resolved.ui_language->tag), Settings::CanonicalizeEnum(resolved.game_language),
              Settings::CanonicalizeEnum(resolved.region));
     return resolved;
+}
+
+namespace {
+std::filesystem::path TitleProfilePath(std::uint64_t title) {
+    return std::filesystem::path{std::wstring{winrt::Windows::Storage::ApplicationData::Current().LocalFolder().Path()}} /
+        "optimization" / (fmt::format("{:016x}", title) + ".cfg");
+}
+}
+bool LoadTitleSettings(std::uint64_t title, SystemSettings& settings) {
+    try {
+        const auto path = TitleProfilePath(title);
+        if (!std::filesystem::exists(path)) return true;
+        const auto text = Updates::Storage::ReadBounded(path, 64 * 1024);
+        if (!text) return false;
+        ApplyTitleProfile(*text, settings.optimization, settings.graphics);
+        return true;
+    } catch (...) { return false; }
+}
+bool SaveTitleSetting(std::uint64_t title, std::string_view assignment) {
+    if (!title) return false;
+    try {
+        const auto path = TitleProfilePath(title);
+        std::filesystem::create_directories(path.parent_path());
+        std::string existing;
+        if (std::filesystem::exists(path)) {
+            const auto text = Updates::Storage::ReadBounded(path, 64 * 1024);
+            if (!text) return false;
+            existing = *text;
+        }
+        const auto updated = EditTitleProfile(existing, assignment);
+        if (updated.size() > 64 * 1024) return false;
+        return Updates::Storage::Persist(path, updated);
+    } catch (...) { return false; }
+}
+void ApplyGraphicsSettings(const GraphicsSettings& settings) {
+    Settings::values.use_docked_mode.SetValue(settings.docked ? Settings::ConsoleMode::Docked : Settings::ConsoleMode::Handheld);
+    Settings::values.aspect_ratio.SetValue(static_cast<Settings::AspectRatio>(settings.aspect_ratio));
+    Settings::values.scaling_filter.SetValue(settings.fsr ? Settings::ScalingFilter::Fsr : Settings::ScalingFilter::Bilinear);
+    Settings::values.fsr_sharpening_slider.SetValue(static_cast<int>(settings.sharpness));
 }
 
 void ApplyUpscaling(Upscaling upscaling) {

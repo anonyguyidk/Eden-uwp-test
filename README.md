@@ -56,9 +56,41 @@ follow [deployment instructions](docs/xbox/xbox_deploy.md). Linux cannot build t
 
 ### Adjustable settings
 
-Open **Settings → System** and use left/right or confirm on the optimization choices. They apply
-at the next game launch. Controls use discrete choices and support controller/keyboard input.
-The new row labels are currently English in every interface language.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:89fd1e83283f5dd82b1e9e4926f0652fc6f50fbdc2a84b6e42776ce16201d575 -->
+
+Open **Settings → Graphics** for graphics and memory controls. **Game Options → Graphics** opens the selected title's profile. Use the **Profile** row to switch between global defaults and that game. Changes apply on the next game launch; per-game files contain only the settings you change. **Inherit global defaults** removes the overrides while preserving unrelated config lines. The System page still offers the existing memory controls.
+
+| Graphics control | Choices | Notes |
+| --- | --- | --- |
+| Console mode | Docked / Handheld | Handheld often requests a lower guest resolution; the game decides its render resolution. |
+| Upscaling | Bilinear / AMD FSR 1 | FSR 1 EASU + RCAS runs when the game image is smaller than the screen. |
+| Sharpness slider | 0–100%, steps of 2.5% | Controller left/right adjusts RCAS strength. Requires FSR 1. |
+| Aspect ratio | 16:9 / 4:3 / 21:9 / 16:10 / Stretch | Presentation framing. |
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:08b6e5bbd95e2971041aed131f3a16297de56a0b38f834296960103782d93ee4 -->
+
+**Internal resolution remains native:** D3D12's render-target scaling methods are stubs. This build does not add a functional internal resolution slider or FSR 3. FSR 1 is retained by request while the working controls and folder browser are completed. New labels are currently English in every interface language.
+
+For console-mode changes, start the game from a cold boot: discard its kept Pulse session through Game Options first. Settings changes never automatically delete a kept session or normal saves.
+
+<!-- /coderabbit-ai-generated:v1 -->
+
+### Browse Xbox DevelopmentFiles
+
+In **Settings → File Manager**, leave **Folder picker = DevelopmentFiles** to browse `D:\DevelopmentFiles\` with a controller, keyboard or pointer. Open subfolders with A/Enter and choose **Use this folder**. Left opens the parent; B/Escape cancels. Navigation stays beneath the DevelopmentFiles root. The Windows system picker remains an alternative, and this preference is saved.
+
+- **Add games folder:** register a folder without copying the game collection; its access token is persisted.
+- **Import keys / firmware:** choose the source folder; the existing importer validates and copies the required files into app storage.
+- **Updates / DLC:** open the content manager and its folder authorization action to browse this root, then select and confirm packages.
+- **Mods / cheats:** open the game's Mods page and its add-folder action. The importer accepts its existing `romfs`, `exefs` and `cheats/<build-id>.txt` layouts; installed cheats appear in the Cheats page. Loose cheat lists must be placed in that layout.
+
+Create the root and your own subfolders through Xbox Device Portal. UWP permissions still apply: an access error is shown instead of claiming access was granted. The Network importer remains available if the console denies this path. At most 2048 child folders are shown per directory; split unusually large collections into subfolders.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 | Setting / config key | Default | Choices | Effect |
 | --- | --- | --- | --- |
@@ -80,8 +112,20 @@ jit_cache_mib=32
 upload_ring_mib=64
 shader_cache_mib=0
 shader_eviction=2
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:81bfbfd37e4fc2f5a442912fc12d27c3778287ec2e978d40d41bbe306fc9f1e3 -->
+
 redundant_binds=1
+graphics_docked=0
+graphics_fsr1=1
+graphics_rcas=25
+graphics_aspect=0
 ```
+
+Graphics config keys: `graphics_docked` and `graphics_fsr1` accept 0/1; `graphics_rcas` accepts 0–200 stops ×100 (0 sharpest); `graphics_aspect` is 0=16:9, 1=4:3, 2=21:9, 3=16:10, 4=stretch. They work in boot.cfg and per-title profiles. The legacy `upscaling=` boot override still takes precedence over graphics filter/sharpness; remove it to let profiles control these. The in-game upscaling menu continues to change the global preference.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 **Capacity estimate:** 128 → 48 MiB across four JITs reduces configured code capacity by
 320 MiB; 128 → 64 MiB saves another 64 MiB of ring capacity. The 384 MiB sum is not a
