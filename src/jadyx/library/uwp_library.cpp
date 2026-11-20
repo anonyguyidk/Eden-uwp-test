@@ -1240,7 +1240,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                     browser.path = browsed.folder.Path().c_str();
                     browser.folders.clear();
                     if (browsed.children.size() > 2048) {
-                        browsed.children.resize(2048);
+                        browsed.children.erase(browsed.children.begin() + 2048, browsed.children.end());
                         browser.notice = L"Showing the first 2048 folders. Split large collections into subfolders.";
                     }
                     for (const auto& child : browsed.children) browser.folders.emplace_back(child.Name().c_str());
@@ -1517,6 +1517,7 @@ std::optional<std::string> ShowGameLibrary(void* core_window, unsigned width, un
                 if (!system_page.open) {
                     configuration.selected = system_page.graphics ? HomeGraphics : HomeSystem;
                     system_page.settings = LoadSystemSettings();
+                    system_page.per_game = false;
                 }
             }
             actions = 0;
