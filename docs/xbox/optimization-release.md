@@ -40,7 +40,17 @@ For console-mode changes, start the game from a cold boot: discard its kept Puls
 
 Use it for game folders, keys and firmware imports, update/DLC authorization and the game's Mods add-folder action. Supported mod layouts include `cheats/<build-id>.txt`, so cheat packs can be imported through Mods. Existing validation and install confirmation remain in effect. Create your folders through Xbox Device Portal; access is subject to the console's UWP permissions. If denied, use Network import. Directories show at most 2048 child folders.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:7786feaee8c7c3db3672a9242c5aa6145182146c21c21f5a9dfc879ce1100efb -->
+
+## Selected upstream fixes
+
+Includes [selected JADYX 0.4.3.0 backports](jadyx-selected-backports.md): retirement-driven PSO index cleanup and the applicable derived-texture alignment fix. This is a selective backport build, not a full JADYX version upgrade. Credits and exact upstream revisions are recorded in the linked notes.
+
 ## Memory controls
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 <!-- /coderabbit-ai-generated:v1 -->
 

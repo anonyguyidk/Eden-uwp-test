@@ -702,6 +702,7 @@ ID3D12Resource* Image::SliceArray() {
     }
     D3D12_RESOURCE_DESC desc = resource->GetDesc();
     desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    desc.Alignment = 0; // The derived layout needs its own placement alignment.
     desc.Flags = D3D12_RESOURCE_FLAG_NONE;
     const D3D12_HEAP_PROPERTIES heap{.Type = D3D12_HEAP_TYPE_DEFAULT};
     ThrowIfFailed(runtime->device.Get()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,

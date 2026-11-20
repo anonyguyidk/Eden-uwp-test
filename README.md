@@ -79,7 +79,17 @@ For console-mode changes, start the game from a cold boot: discard its kept Puls
 
 <!-- /coderabbit-ai-generated:v1 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:1d618b0dc062dc4c02296da00dfea6a4a2e95b6e125aa46c7a6264294ed74d57 -->
+
+### Selected JADYX 0.4.3.0 backports
+
+The follow-up build adds retirement-driven PSO index cleanup and a derived-texture alignment fix. See the [exact upstream commits, credits and validation scope](docs/xbox/jadyx-selected-backports.md). This is a selective backport build; the original baseline and app identity remain in place.
+
 ### Browse Xbox DevelopmentFiles
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 In **Settings → File Manager**, leave **Folder picker = DevelopmentFiles** to browse `D:\DevelopmentFiles\` with a controller, keyboard or pointer. Open subfolders with A/Enter and choose **Use this folder**. Left opens the parent; B/Escape cancels. Navigation stays beneath the DevelopmentFiles root. The Windows system picker remains an alternative, and this preference is saved.
 

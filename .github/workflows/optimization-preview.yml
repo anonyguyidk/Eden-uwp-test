@@ -23,6 +23,7 @@ jobs:
       - name: Check frontend settings before the Windows build
         run: |
           python3 tools/xbox/tests/boot-optimization-integration.py
+          python3 tools/xbox/tests/folder-picker-integration.py
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Isrc tools/xbox/tests/graphics-profile.cpp src/jadyx/i18n/localization.cpp src/jadyx/i18n/locales/*.cpp -o /tmp/graphics-profile
           /tmp/graphics-profile
           g++ -std=c++20 -O2 -Isrc tools/xbox/tests/system-settings.cpp src/jadyx/i18n/localization.cpp src/jadyx/i18n/locales/*.cpp -o /tmp/system-settings
@@ -31,6 +32,8 @@ jobs:
           /tmp/mods-page
           g++ -std=c++20 -O2 -Isrc tools/xbox/tests/cheats-page.cpp src/core/memory/cheat_text.cpp -o /tmp/cheats-page
           /tmp/cheats-page
+          g++ -std=c++20 -O2 -pthread -Wall -Wextra -Werror -Isrc tools/xbox/tests/live-cache-retirement.cpp -o /tmp/live-cache-retirement
+          /tmp/live-cache-retirement
 
   build:
     needs: preflight
